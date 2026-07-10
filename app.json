@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "OnFlow Lite",
+    "slug": "onflow-lite",
+    "version": "1.0.0",
+    "scheme": "onflowlite",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#1A1A1C",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "OnFlow Lite uses the camera to film skate clips for analysis.",
+        "NSMicrophoneUsageDescription": "OnFlow Lite records audio with your skate clips.",
+        "NSPhotoLibraryUsageDescription": "OnFlow Lite lets you pick skate clips from your library."
+      }
+    },
+    "android": {
+      "permissions": ["CAMERA", "RECORD_AUDIO"]
+    },
+    "plugins": ["expo-router"]
+  }
+}
