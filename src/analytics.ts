@@ -3,6 +3,7 @@ export type AnalyticsEvent =
   | "clip_film_started"
   | "trick_selected"
   | "capture_completed"
+  | "capture_failed"
   | "land_reported"
   | "log_viewed"
   | "log_exported"
