@@ -98,7 +98,10 @@ export function deriveEvidenceClass(
   source: "sample" | "user",
 ): EvidenceClass {
   if (source === "user") {
-    return observations.some((o) => o.tag === "DETECTED") ? "DETECTED" : "ESTIMATE";
+    if (observations.some((o) => o.tag === "DETECTED")) {
+      console.warn("P.T.E. invariant violation: DETECTED user observation clamped to ESTIMATE");
+    }
+    return observations.some((o) => o.tag !== "NO EVIDENCE") ? "ESTIMATE" : "NO EVIDENCE";
   }
   if (observations.some((o) => o.tag === "DETECTED")) return "DETECTED";
   if (observations.some((o) => o.tag === "ESTIMATE")) return "ESTIMATE";
