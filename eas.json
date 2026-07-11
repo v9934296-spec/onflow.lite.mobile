@@ -12,10 +12,13 @@
       "distribution": "internal"
     },
     "production": {
+      "distribution": "store",
       "autoIncrement": true
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {}
+    }
   }
 }
