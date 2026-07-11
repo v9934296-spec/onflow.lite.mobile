@@ -56,11 +56,15 @@ See [`docs/PTE_MANIFESTO.md`](docs/PTE_MANIFESTO.md). Every analysis includes **
 - Ratings abstain when confidence &lt; 50% or clip duration is insufficient.
 - Post-result manual log: landed / missed / unsure, attempts, spot, notes.
 
+## Documentation
+
+See [`docs/README.md`](docs/README.md) — manifesto (constitution) and production score-determinism build spec.
+
 ## Structure
 
 ```
 app/              expo-router screens (index, trick, capture, analyzing, result, log)
-docs/             PTE_MANIFESTO.md
+docs/             PTE_MANIFESTO.md, PTE_SCORE_DETERMINISM.md
 src/engine.ts     P.T.E. lite engine (abstention, receipts, versioning)
 src/progress.ts   land attempts, 7-day view, streaks
 src/logSummary.ts session stats (attempts, landed %, evidence tally)
