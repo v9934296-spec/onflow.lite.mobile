@@ -11,42 +11,48 @@ export interface DaySlot {
   status: DayStatus;
 }
 
-function toDateKey(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-function dayLabel(d: Date): string {
-  return d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+function dayLabel(date: Date): string {
+  return date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+}
+
+function isUserAttempt(attempt: LandedAttempt): boolean {
+  return attempt.source === "user";
 }
 
 export function getLast7Days(attempts: LandedAttempt[], now = new Date()): DaySlot[] {
   const byDate = new Map<string, DayStatus>();
 
-  for (const a of attempts) {
-    const key = toDateKey(new Date(a.loggedAt));
-    const prev = byDate.get(key);
-    const isLanded = a.manualOutcome === "landed" || a.landed;
-    const isMissed = a.manualOutcome === "missed";
+  for (const attempt of attempts) {
+    if (!isUserAttempt(attempt)) continue;
+
+    const key = toDateKey(new Date(attempt.loggedAt));
+    const previous = byDate.get(key);
+    const isLanded = attempt.manualOutcome === "landed" || attempt.landed;
+    const isMissed = attempt.manualOutcome === "missed";
     if (isLanded) {
       byDate.set(key, "landed");
-    } else if (isMissed && prev !== "landed") {
+    } else if (isMissed && previous !== "landed") {
       byDate.set(key, "bailed");
     }
   }
 
   const slots: DaySlot[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setHours(12, 0, 0, 0);
-    d.setDate(d.getDate() - i);
-    const date = toDateKey(d);
+  for (let daysAgo = 6; daysAgo >= 0; daysAgo--) {
+    const date = new Date(now);
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() - daysAgo);
+    const dateKey = toDateKey(date);
     slots.push({
-      date,
-      label: dayLabel(d),
-      status: byDate.get(date) ?? "none",
+      date: dateKey,
+      label: dayLabel(date),
+      status: byDate.get(dateKey) ?? "none",
     });
   }
   return slots;
@@ -57,13 +63,21 @@ export function getLast7Days(attempts: LandedAttempt[], now = new Date()): DaySl
  * score. It may be shown for engagement, but must never feed P.T.E. ratings,
  * skill scores, evidence classes, or any claim of measured progression.
  */
-export function getTrickStreak(attempts: LandedAttempt[], trick: string, now = new Date()): number {
-  const trickAttempts = attempts.filter((a) => a.trick === trick);
+export function getTrickStreak(
+  attempts: LandedAttempt[],
+  trick: string,
+  now = new Date(),
+): number {
+  const trickAttempts = attempts.filter(
+    (attempt) => isUserAttempt(attempt) && attempt.trick === trick,
+  );
   if (trickAttempts.length === 0) return 0;
 
   const landedDates = new Set<string>();
-  for (const a of trickAttempts) {
-    if (a.manualOutcome === "landed" || a.landed) landedDates.add(toDateKey(new Date(a.loggedAt)));
+  for (const attempt of trickAttempts) {
+    if (attempt.manualOutcome === "landed" || attempt.landed) {
+      landedDates.add(toDateKey(new Date(attempt.loggedAt)));
+    }
   }
 
   let streak = 0;
@@ -82,8 +96,13 @@ export function getTrickStreak(attempts: LandedAttempt[], trick: string, now = n
   return streak;
 }
 
-export function getBestTrickStreak(attempts: LandedAttempt[], now = new Date()): { trick: string; streak: number } | null {
-  const tricks = [...new Set(attempts.map((a) => a.trick))];
+export function getBestTrickStreak(
+  attempts: LandedAttempt[],
+  now = new Date(),
+): { trick: string; streak: number } | null {
+  const tricks = [
+    ...new Set(attempts.filter(isUserAttempt).map((attempt) => attempt.trick)),
+  ];
   let best: { trick: string; streak: number } | null = null;
   for (const trick of tricks) {
     const streak = getTrickStreak(attempts, trick, now);
@@ -96,9 +115,18 @@ export async function loadAttempts(): Promise<LoadResult<LandedAttempt[]>> {
   try {
     const raw = await AsyncStorage.getItem(KEY);
     if (!raw) return { data: [] };
-    return { data: JSON.parse(raw) as LandedAttempt[] };
-  } catch (e) {
-    return { data: [], loadError: e instanceof Error ? e.message : "Failed to load progress" };
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return { data: [], loadError: "Saved progress has an invalid format" };
+    }
+
+    return { data: parsed as LandedAttempt[] };
+  } catch (error) {
+    return {
+      data: [],
+      loadError: error instanceof Error ? error.message : "Failed to load progress",
+    };
   }
 }
 
@@ -106,8 +134,11 @@ export async function saveAttempts(attempts: LandedAttempt[]): Promise<StorageRe
   try {
     await AsyncStorage.setItem(KEY, JSON.stringify(attempts));
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Failed to save progress" };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to save progress",
+    };
   }
 }
 
@@ -120,7 +151,10 @@ export async function clearAttempts(): Promise<StorageResult> {
   try {
     await AsyncStorage.removeItem(KEY);
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Failed to clear progress" };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to clear progress",
+    };
   }
 }
