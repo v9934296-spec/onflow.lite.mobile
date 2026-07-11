@@ -21,13 +21,13 @@
     "android": {
       "package": "com.onflow.lite",
       "versionCode": 1,
-      "permissions": ["CAMERA", "RECORD_AUDIO"]
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ]
     },
-    "plugins": ["expo-router"],
-    "extra": {
-      "eas": {
-        "projectId": "placeholder-replace-with-eas-init"
-      }
-    }
+    "plugins": [
+      "expo-router"
+    ]
   }
 }
