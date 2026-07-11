@@ -1,9 +1,10 @@
-import React, { useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Pressable } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useRef, useState } from "react";
+import { View, Text, ScrollView, StyleSheet, Pressable, Alert } from "react-native";
+import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow, Tag, LiteBanner, Field } from "../src/ui";
+import { getFlowRedirect } from "../src/flow";
 import { useSession } from "../src/session";
 import { ManualOutcome } from "../src/types";
 
@@ -30,20 +31,19 @@ function OutcomeBtn({
 
 export default function Result() {
   const router = useRouter();
-  const { analysis, reportManualLog } = useSession();
+  const { trick, analysis, setAnalysis, reportManualLog } = useSession();
   const insets = useSafeAreaInsets();
+  const submitLock = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [outcome, setOutcome] = useState<ManualOutcome | null>(null);
   const [attempts, setAttempts] = useState("1");
   const [spot, setSpot] = useState("");
   const [notes, setNotes] = useState("");
 
-  if (!analysis) {
-    router.replace("/");
-    return null;
-  }
+  const redirect = getFlowRedirect("result", { trick, analysis });
+  if (redirect) return <Redirect href={redirect} />;
 
-  const a = analysis;
+  const a = analysis!;
   const isSelfReport = a.selfReportOnly === true;
   const bannerMessage = isSelfReport
     ? "SELF-REPORT — no detection pipeline. Log what actually happened."
@@ -55,19 +55,30 @@ export default function Result() {
     a.evidenceClass === "DETECTED" ? C.volt : a.evidenceClass === "ESTIMATE" ? C.amber : C.red;
 
   const handleSave = async () => {
-    if (!outcome) return;
+    if (!outcome || submitLock.current) return;
+
+    submitLock.current = true;
     setSubmitting(true);
     try {
       await reportManualLog({
         manualOutcome: outcome,
-        attempts: Math.max(1, parseInt(attempts, 10) || 1),
+        attempts: Math.min(999, Math.max(1, parseInt(attempts, 10) || 1)),
         spot: spot.trim(),
         notes: notes.trim(),
       });
       router.replace("/log");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The attempt could not be logged.";
+      Alert.alert("Couldn't save the attempt", message);
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
+  };
+
+  const handleAnotherClip = () => {
+    setAnalysis(null);
+    router.back();
   };
 
   return (
@@ -77,6 +88,7 @@ export default function Result() {
         s.content,
         { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 },
       ]}
+      keyboardShouldPersistTaps="handled"
     >
       <LiteBanner message={bannerMessage} />
 
@@ -114,71 +126,73 @@ export default function Result() {
 
       <Card>
         <Eyebrow color={C.volt}>RECEIPTS</Eyebrow>
-        {a.receipts.map((r) => (
-          <View key={r.id} style={s.receiptRow}>
-            <Text style={s.receiptLabel}>{r.label.toUpperCase()}</Text>
-            <Text style={s.receiptDetail}>{r.detail}</Text>
+        {a.receipts.map((receipt) => (
+          <View key={receipt.id} style={s.receiptRow}>
+            <Text style={s.receiptLabel}>{receipt.label.toUpperCase()}</Text>
+            <Text style={s.receiptDetail}>{receipt.detail}</Text>
           </View>
         ))}
       </Card>
 
       <View style={{ gap: 10 }}>
         <Eyebrow>OBSERVATIONS</Eyebrow>
-        {a.observations.map((o, i) => (
-          <View key={i} style={s.obsRow}>
-            <Text style={s.obsText}>{o.text}</Text>
-            <Tag kind={o.tag} />
+        {a.observations.map((observation, index) => (
+          <View key={index} style={s.obsRow}>
+            <Text style={s.obsText}>{observation.text}</Text>
+            <Tag kind={observation.tag} />
           </View>
         ))}
       </View>
 
-      {!a.abstained ? (
-        <Card accent={C.volt}>
-          <Eyebrow color={C.volt}>LOG THIS ATTEMPT</Eyebrow>
-          <Text style={s.body}>What happened? This is your record — not a guess from the engine.</Text>
+      <Card accent={C.volt}>
+        <Eyebrow color={C.volt}>LOG THIS ATTEMPT</Eyebrow>
+        <Text style={s.body}>
+          {a.abstained
+            ? "The engine abstained, but your self-report can still preserve what happened."
+            : "What happened? This is your record — not a guess from the engine."}
+        </Text>
 
-          <View style={s.outcomeRow}>
-            <OutcomeBtn
-              label="Landed"
-              selected={outcome === "landed"}
-              onPress={() => setOutcome("landed")}
-              color={C.volt}
-            />
-            <OutcomeBtn
-              label="Missed"
-              selected={outcome === "missed"}
-              onPress={() => setOutcome("missed")}
-              color={C.red}
-            />
-            <OutcomeBtn
-              label="Unsure"
-              selected={outcome === "unsure"}
-              onPress={() => setOutcome("unsure")}
-              color={C.amber}
-            />
-          </View>
-
-          <Field
-            label="ATTEMPTS"
-            value={attempts}
-            onChangeText={setAttempts}
-            keyboardType="number-pad"
-            placeholder="1"
+        <View style={s.outcomeRow}>
+          <OutcomeBtn
+            label="Landed"
+            selected={outcome === "landed"}
+            onPress={() => setOutcome("landed")}
+            color={C.volt}
           />
-          <Field label="SPOT" value={spot} onChangeText={setSpot} placeholder="Where did you skate?" />
-          <Field
-            label="NOTES"
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="Anything worth remembering"
-            multiline
-            numberOfLines={3}
-            style={{ minHeight: 72, textAlignVertical: "top" }}
+          <OutcomeBtn
+            label="Missed"
+            selected={outcome === "missed"}
+            onPress={() => setOutcome("missed")}
+            color={C.red}
           />
+          <OutcomeBtn
+            label="Unsure"
+            selected={outcome === "unsure"}
+            onPress={() => setOutcome("unsure")}
+            color={C.amber}
+          />
+        </View>
 
-          <Btn label="Save to log" onPress={handleSave} disabled={!outcome || submitting} />
-        </Card>
-      ) : null}
+        <Field
+          label="ATTEMPTS"
+          value={attempts}
+          onChangeText={setAttempts}
+          keyboardType="number-pad"
+          placeholder="1"
+        />
+        <Field label="SPOT" value={spot} onChangeText={setSpot} placeholder="Where did you skate?" />
+        <Field
+          label="NOTES"
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Anything worth remembering"
+          multiline
+          numberOfLines={3}
+          style={{ minHeight: 72, textAlignVertical: "top" }}
+        />
+
+        <Btn label="Save to log" onPress={() => void handleSave()} disabled={!outcome || submitting} />
+      </Card>
 
       <Card accent={C.red}>
         <Eyebrow color={C.red}>WORK ON</Eyebrow>
@@ -188,10 +202,8 @@ export default function Result() {
       {a.styleNote ? <Text style={s.styleNote}>Style: {a.styleNote}</Text> : null}
 
       <View style={{ gap: 10, marginTop: 8 }}>
-        {a.abstained ? (
-          <Btn label="Refilm the clip" onPress={() => router.replace("/capture")} />
-        ) : null}
-        <Btn label="Another clip" variant="ghost" onPress={() => router.replace("/capture")} />
+        {a.abstained ? <Btn label="Refilm the clip" onPress={handleAnotherClip} /> : null}
+        <Btn label="Another clip" variant="ghost" onPress={handleAnotherClip} />
       </View>
     </ScrollView>
   );
