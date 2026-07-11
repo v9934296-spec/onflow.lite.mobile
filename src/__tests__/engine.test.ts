@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   analyzeSample,
   analyzeUserClip,
@@ -76,10 +76,29 @@ describe("analyzeSample", () => {
 });
 
 describe("evidence helpers", () => {
-  it("deriveEvidenceClass never returns DETECTED for user source without detected obs", () => {
+  it("deriveEvidenceClass returns ESTIMATE for ordinary user evidence", () => {
     expect(
       deriveEvidenceClass([{ text: "x", tag: "ESTIMATE" }], "user"),
     ).toBe("ESTIMATE");
+  });
+
+  it("clamps adversarial DETECTED user evidence to ESTIMATE and warns", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    expect(
+      deriveEvidenceClass([{ text: "pipeline claimed detection", tag: "DETECTED" }], "user"),
+    ).toBe("ESTIMATE");
+    expect(warn).toHaveBeenCalledWith(
+      "P.T.E. invariant violation: DETECTED user observation clamped to ESTIMATE",
+    );
+
+    warn.mockRestore();
+  });
+
+  it("returns NO EVIDENCE when user observations contain no evidence", () => {
+    expect(
+      deriveEvidenceClass([{ text: "nothing visible", tag: "NO EVIDENCE" }], "user"),
+    ).toBe("NO EVIDENCE");
   });
 
   it("computeConfidence weights DETECTED higher than ESTIMATE", () => {
