@@ -10,9 +10,10 @@ function attempt(
   trick: string,
   manualOutcome: LandedAttempt["manualOutcome"],
   date: string,
+  source: LandedAttempt["source"] = "user",
 ): LandedAttempt {
   return {
-    id: `${date}-${trick}`,
+    id: `${date}-${trick}-${source}`,
     trick,
     manualOutcome,
     attempts: 1,
@@ -20,7 +21,7 @@ function attempt(
     notes: "",
     landed: manualOutcome === "landed",
     loggedAt: `${date}T18:00:00.000-07:00`,
-    source: "user",
+    source,
   };
 }
 
@@ -43,7 +44,10 @@ describe("getLast7Days", () => {
   });
 
   it("marks landed when any attempt landed that day", () => {
-    const attempts = [attempt("Kickflip", "landed", "2026-07-10"), attempt("Kickflip", "missed", "2026-07-10")];
+    const attempts = [
+      attempt("Kickflip", "landed", "2026-07-10"),
+      attempt("Kickflip", "missed", "2026-07-10"),
+    ];
     const slots = getLast7Days(attempts, now);
     expect(slots[6].status).toBe("landed");
   });
@@ -52,6 +56,11 @@ describe("getLast7Days", () => {
     const attempts = [attempt("Kickflip", "missed", "2026-07-09")];
     const slots = getLast7Days(attempts, now);
     expect(slots[5].status).toBe("bailed");
+  });
+
+  it("ignores scripted sample attempts", () => {
+    const slots = getLast7Days([attempt("Kickflip", "landed", "2026-07-10", "sample")], now);
+    expect(slots[6].status).toBe("none");
   });
 });
 
@@ -76,6 +85,12 @@ describe("getTrickStreak", () => {
 
     expect(getTrickStreak(attempts, "Kickflip", new Date("2026-07-11T06:00:00.000Z"))).toBe(2);
   });
+
+  it("does not count scripted samples toward a self-reported streak", () => {
+    expect(
+      getTrickStreak([attempt("Kickflip", "landed", "2026-07-10", "sample")], "Kickflip", now),
+    ).toBe(0);
+  });
 });
 
 describe("getBestTrickStreak", () => {
@@ -86,5 +101,9 @@ describe("getBestTrickStreak", () => {
       attempt("Ollie", "landed", "2026-07-09"),
     ];
     expect(getBestTrickStreak(attempts, now)).toEqual({ trick: "Ollie", streak: 2 });
+  });
+
+  it("returns null when only scripted sample attempts exist", () => {
+    expect(getBestTrickStreak([attempt("Kickflip", "landed", "2026-07-10", "sample")], now)).toBeNull();
   });
 });
