@@ -16,12 +16,15 @@ export default function Log() {
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
+    resetLoop();
     track("log_viewed");
-  }, []);
+  }, [resetLoop]);
 
-  const summary = summarizeLog(log);
-  const rated = log.filter((e) => e.analysis.rating !== null);
-  const ratings = rated.map((e) => e.analysis.rating as number);
+  const userLog = log.filter((entry) => entry.analysis.source === "user");
+  const summary = summarizeLog(userLog);
+  const rated = log.filter((entry) => entry.analysis.rating !== null);
+  const ratings = rated.map((entry) => entry.analysis.rating as number);
+  const ratingsAreSamples = rated.length > 0 && rated.every((entry) => entry.analysis.source === "sample");
   const latest = rated.length > 0 ? rated[rated.length - 1] : null;
   const week = getLast7Days(attempts);
   const bestStreak = getBestTrickStreak(attempts);
@@ -31,41 +34,50 @@ export default function Log() {
     .toUpperCase();
 
   const handleExport = async () => {
-    const payload = JSON.stringify({ log, attempts }, null, 2);
-    await Share.share({ message: payload, title: "OnFlow Lite export" });
-    track("log_exported");
+    try {
+      const payload = JSON.stringify({ log, attempts }, null, 2);
+      await Share.share({ message: payload, title: "OnFlow Lite export" });
+      track("log_exported");
+    } catch (error) {
+      Alert.alert(
+        "Couldn't export the log",
+        error instanceof Error ? error.message : "The share sheet could not be opened.",
+      );
+    }
   };
 
   const handleClear = () => {
-    Alert.alert("Clear session log?", "This removes all logged clips. Progress streaks are kept.", [
+    Alert.alert("Clear clip log?", "This removes all logged clips. Progress streaks are kept.", [
       { text: "Cancel", style: "cancel" },
-      { text: "Clear", style: "destructive", onPress: () => clearSessionLog() },
+      { text: "Clear", style: "destructive", onPress: () => void clearSessionLog() },
     ]);
   };
 
   const handleDelete = (id: string, trick: string) => {
     Alert.alert("Delete clip?", trick, [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => deleteClip(id) },
+      { text: "Delete", style: "destructive", onPress: () => void deleteClip(id) },
     ]);
   };
 
-  const outcomeLabel = (e: (typeof log)[0]) => {
-    const o = e.manualLog?.manualOutcome ?? (e.landed === true ? "landed" : e.landed === false ? "missed" : null);
-    if (o === "landed") return "landed";
-    if (o === "missed") return "missed";
-    if (o === "unsure") return "unsure";
+  const outcomeLabel = (entry: (typeof log)[0]) => {
+    const outcome =
+      entry.manualLog?.manualOutcome ??
+      (entry.landed === true ? "landed" : entry.landed === false ? "missed" : null);
+    if (outcome === "landed") return "landed";
+    if (outcome === "missed") return "missed";
+    if (outcome === "unsure") return "unsure";
     return null;
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.charcoal }}>
       <ScrollView contentContainerStyle={[s.content, { paddingTop: insets.top + 16 }]}>
-        <Eyebrow>SESSION LOG · {dateLabel}</Eyebrow>
+        <Eyebrow>CLIP LOG · UPDATED {dateLabel}</Eyebrow>
 
-        {log.length > 0 && (
+        {userLog.length > 0 && (
           <Card>
-            <Eyebrow color={C.volt}>SESSION SUMMARY</Eyebrow>
+            <Eyebrow color={C.volt}>SELF-REPORTED SESSION SUMMARY</Eyebrow>
             <Text style={s.summaryLine}>
               <Text style={{ color: C.offwhite }}>{summary.totalAttempts}</Text> attempts ·{" "}
               <Text style={{ color: C.volt }}>{summary.landedPct}%</Text> landed ·{" "}
@@ -90,7 +102,7 @@ export default function Log() {
 
         {attempts.length > 0 && (
           <Card>
-            <Eyebrow color={C.volt}>PROGRESS · LAST 7 DAYS</Eyebrow>
+            <Eyebrow color={C.volt}>SELF-REPORTED PROGRESS · LAST 7 DAYS</Eyebrow>
             <WeekRow days={week} />
             {bestStreak ? (
               <Text style={s.streakMeta}>
@@ -110,7 +122,9 @@ export default function Log() {
           <>
             {ratings.length > 0 && (
               <Card>
-                <Eyebrow color={C.volt}>P.T.E. · RATING OVER SESSION</Eyebrow>
+                <Eyebrow color={C.volt}>
+                  {ratingsAreSamples ? "SAMPLE P.T.E. · DEMO CLIP RATINGS" : "P.T.E. · RATING OVER SESSION"}
+                </Eyebrow>
                 <RatingLine ratings={ratings} />
               </Card>
             )}
@@ -118,27 +132,27 @@ export default function Log() {
             {latest?.analysis.breakdown && (
               <Card>
                 <Eyebrow color={C.volt}>
-                  LAST CLIP ·{" "}
-                  {(latest.analysis.trickOnFilm ?? latest.analysis.trickCalled).toUpperCase()}{" "}
-                  BREAKDOWN
+                  {latest.analysis.source === "sample" ? "SAMPLE · " : "LAST CLIP · "}
+                  {(latest.analysis.trickOnFilm ?? latest.analysis.trickCalled).toUpperCase()} BREAKDOWN
                 </Eyebrow>
                 <BreakdownBars items={latest.analysis.breakdown} />
               </Card>
             )}
 
-            {log.map((e, i) => {
-              const trick = e.analysis.trickOnFilm ?? e.analysis.trickCalled;
-              const trickStreak = getTrickStreak(attempts, trick);
-              const o = outcomeLabel(e);
+            {log.map((entry, index) => {
+              const trick = entry.analysis.trickOnFilm ?? entry.analysis.trickCalled;
+              const trickStreak =
+                entry.analysis.source === "user" ? getTrickStreak(attempts, trick) : 0;
+              const outcome = outcomeLabel(entry);
               return (
-                <View key={e.id} style={s.logCard}>
-                  {e.analysis.rating !== null ? (
-                    <Text style={s.logRating}>{e.analysis.rating.toFixed(1)}</Text>
-                  ) : o === "landed" ? (
+                <View key={entry.id} style={s.logCard}>
+                  {entry.analysis.rating !== null ? (
+                    <Text style={s.logRating}>{entry.analysis.rating.toFixed(1)}</Text>
+                  ) : outcome === "landed" ? (
                     <Text style={[s.logRating, { fontSize: 14 }]}>✓</Text>
-                  ) : o === "missed" ? (
+                  ) : outcome === "missed" ? (
                     <Text style={[s.logRating, { color: C.red, fontSize: 14 }]}>✗</Text>
-                  ) : o === "unsure" ? (
+                  ) : outcome === "unsure" ? (
                     <Text style={[s.logRating, { color: C.amber, fontSize: 14 }]}>?</Text>
                   ) : (
                     <Text style={[s.logRating, { color: C.dim, fontSize: 14 }]}>N/R</Text>
@@ -146,20 +160,22 @@ export default function Log() {
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={s.logTrick}>{trick}</Text>
                     <Text style={s.logMeta}>
-                      clip {i + 1} · {e.analysis.source === "sample" ? "sample" : "your footage"} ·{" "}
-                      {e.analysis.evidenceClass}
-                      {e.manualLog ? ` · ${e.manualLog.attempts} attempt${e.manualLog.attempts === 1 ? "" : "s"}` : ""}
-                      {o ? ` · ${o}` : ""}
-                      {e.manualLog?.spot ? ` · ${e.manualLog.spot}` : ""}
-                      {e.analysis.mismatch ? " · called wrong" : ""}
-                      {trickStreak > 0 ? ` · ${trickStreak}d streak` : ""}
+                      clip {index + 1} · {entry.analysis.source === "sample" ? "sample demo" : "your footage"} ·{" "}
+                      {entry.analysis.evidenceClass}
+                      {entry.manualLog
+                        ? ` · ${entry.manualLog.attempts} attempt${entry.manualLog.attempts === 1 ? "" : "s"}`
+                        : ""}
+                      {outcome ? ` · ${outcome}` : ""}
+                      {entry.manualLog?.spot ? ` · ${entry.manualLog.spot}` : ""}
+                      {entry.analysis.mismatch ? " · called wrong" : ""}
+                      {trickStreak > 0 ? ` · ${trickStreak}d self-reported streak` : ""}
                     </Text>
-                    {e.manualLog?.notes ? (
-                      <Text style={s.logNotes}>{e.manualLog.notes}</Text>
+                    {entry.manualLog?.notes ? (
+                      <Text style={s.logNotes}>{entry.manualLog.notes}</Text>
                     ) : null}
-                    <Text style={s.engineStamp}>{e.analysis.engineVersion}</Text>
+                    <Text style={s.engineStamp}>{entry.analysis.engineVersion}</Text>
                   </View>
-                  <Pressable onPress={() => handleDelete(e.id, trick)} hitSlop={8}>
+                  <Pressable onPress={() => handleDelete(entry.id, trick)} hitSlop={8}>
                     <Text style={s.deleteBtn}>✕</Text>
                   </Pressable>
                 </View>
@@ -179,7 +195,7 @@ export default function Log() {
         />
         {log.length > 0 && (
           <>
-            <Btn label="Export log" variant="ghost" onPress={handleExport} />
+            <Btn label="Export log" variant="ghost" onPress={() => void handleExport()} />
             <Btn label="Clear log" variant="red" onPress={handleClear} />
           </>
         )}
