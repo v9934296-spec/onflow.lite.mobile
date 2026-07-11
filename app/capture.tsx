@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import { track } from "../src/analytics";
 import { C, F } from "../src/theme";
 import { Btn, Eyebrow } from "../src/ui";
 import { SAMPLE_CLIPS, analyzeSample, analyzeUserClip } from "../src/engine";
@@ -40,6 +41,7 @@ export default function Capture() {
       const asset = result.assets[0];
       const durationSec = asset.duration ? asset.duration / 1000 : null;
       setAnalysis(analyzeUserClip(asset.uri, durationSec, trick));
+      track("capture_completed", { source: "user", trick });
       router.push("/analyzing");
     } finally {
       setBusy(false);
@@ -62,6 +64,7 @@ export default function Capture() {
           style={({ pressed }) => [s.clipCard, { opacity: pressed ? 0.75 : 1 }]}
           onPress={() => {
             setAnalysis(analyzeSample(clip, trick));
+            track("capture_completed", { source: "sample", trick, clipId: clip.id });
             router.push("/analyzing");
           }}
         >
@@ -72,7 +75,7 @@ export default function Capture() {
         </Pressable>
       ))}
 
-      <Eyebrow>YOUR OWN FOOTAGE · LITE READ (ESTIMATES ONLY)</Eyebrow>
+      <Eyebrow>YOUR OWN FOOTAGE · SELF-REPORT · ESTIMATE ONLY</Eyebrow>
       <View style={{ gap: 10 }}>
         <Btn label="Film with camera" onPress={() => runUserClip(true)} disabled={busy} />
         <Btn label="Pick from library" variant="ghost" onPress={() => runUserClip(false)} disabled={busy} />

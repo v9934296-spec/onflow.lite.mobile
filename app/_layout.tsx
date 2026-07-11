@@ -9,8 +9,37 @@ import {
 import { SpaceMono_400Regular } from "@expo-google-fonts/space-mono";
 import { View } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { SessionProvider } from "../src/session";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SessionProvider, useSession } from "../src/session";
+import { StorageWarningBanner } from "../src/ui";
 import { C } from "../src/theme";
+
+function StorageWarningOverlay() {
+  const { storageWarning, dismissStorageWarning } = useSession();
+  const insets = useSafeAreaInsets();
+  if (!storageWarning) return null;
+  return (
+    <View style={{ position: "absolute", top: insets.top + 8, left: 16, right: 16, zIndex: 100 }}>
+      <StorageWarningBanner message={storageWarning} onDismiss={dismissStorageWarning} />
+    </View>
+  );
+}
+
+function RootLayout() {
+  return (
+    <>
+      <StatusBar style="light" />
+      <StorageWarningOverlay />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: C.charcoal },
+          animation: "fade",
+        }}
+      />
+    </>
+  );
+}
 
 export default function Layout() {
   const [loaded] = useFonts({
@@ -24,14 +53,7 @@ export default function Layout() {
 
   return (
     <SessionProvider>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: C.charcoal },
-          animation: "fade",
-        }}
-      />
+      <RootLayout />
     </SessionProvider>
   );
 }

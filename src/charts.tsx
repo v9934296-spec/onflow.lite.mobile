@@ -1,17 +1,18 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, useWindowDimensions } from "react-native";
 import Svg, { Polyline, Circle, Line as SvgLine, Text as SvgText } from "react-native-svg";
 import { C, F } from "./theme";
 import { BreakdownItem } from "./types";
 
-const CHART_W = 320;
 const CHART_H = 120;
 const PAD_L = 26;
 const PAD_R = 12;
 const PAD_T = 10;
 const PAD_B = 20;
 
-export function RatingLine({ ratings }: { ratings: number[] }) {
+export function RatingLine({ ratings, width }: { ratings: number[]; width?: number }) {
+  const { width: screenW } = useWindowDimensions();
+  const CHART_W = width ?? Math.max(280, screenW - 48);
   const innerW = CHART_W - PAD_L - PAD_R;
   const innerH = CHART_H - PAD_T - PAD_B;
   const n = ratings.length;
@@ -22,7 +23,7 @@ export function RatingLine({ ratings }: { ratings: number[] }) {
   const points = ratings.map((v, i) => `${x(i)},${y(v)}`).join(" ");
 
   return (
-    <Svg width={CHART_W} height={CHART_H}>
+    <Svg width={CHART_W} height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
       {[0, 5, 10].map((tick) => (
         <React.Fragment key={tick}>
           <SvgLine

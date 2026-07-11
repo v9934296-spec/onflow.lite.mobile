@@ -1,4 +1,8 @@
-import { Analysis, Observation, SampleClip } from "./types";
+import { Analysis, EvidenceClass, Observation, Receipt, SampleClip } from "./types";
+
+export const ENGINE_VERSION = "pte-lite-v0.1";
+export const MIN_CLIP_DURATION_SEC = 2;
+export const MIN_CONFIDENCE_FOR_RATING = 50;
 
 export const TRICKS = [
   "Ollie",
@@ -17,7 +21,12 @@ export const SAMPLE_CLIPS: SampleClip[] = [
   { id: "ollie-5", label: "Ollie — 5 stair", canonical: "Ollie", spot: "Mission High 5", durationSec: 4 },
 ];
 
-const SCRIPTED: Record<string, Omit<Analysis, "trickCalled" | "mismatch" | "source">> = {
+type AnalysisCore = Omit<
+  Analysis,
+  "trickCalled" | "mismatch" | "source" | "engineVersion" | "evidenceClass" | "confidence" | "receipts" | "abstainReason"
+>;
+
+const SCRIPTED: Record<string, AnalysisCore> = {
   "kf-flat": {
     trickOnFilm: "Kickflip",
     abstained: false,
@@ -74,6 +83,101 @@ const SCRIPTED: Record<string, Omit<Analysis, "trickCalled" | "mismatch" | "sour
   },
 };
 
+export function computeConfidence(observations: Observation[]): number {
+  if (observations.length === 0) return 0;
+  let score = 0;
+  for (const o of observations) {
+    if (o.tag === "DETECTED") score += 100;
+    else if (o.tag === "ESTIMATE") score += 40;
+  }
+  return Math.round(score / observations.length);
+}
+
+export function deriveEvidenceClass(
+  observations: Observation[],
+  source: "sample" | "user",
+): EvidenceClass {
+  if (source === "user") {
+    return observations.some((o) => o.tag === "DETECTED") ? "DETECTED" : "ESTIMATE";
+  }
+  if (observations.some((o) => o.tag === "DETECTED")) return "DETECTED";
+  if (observations.some((o) => o.tag === "ESTIMATE")) return "ESTIMATE";
+  return "NO EVIDENCE";
+}
+
+export function buildReceiptsFromObservations(observations: Observation[]): Receipt[] {
+  return observations.map((o, i) => ({
+    id: `obs-${i}`,
+    label: o.tag,
+    source:
+      o.tag === "DETECTED" ? "detected" : o.tag === "ESTIMATE" ? "estimated" : "none",
+    detail: o.text,
+  }));
+}
+
+export function buildReceiptsFromBreakdown(breakdown: Analysis["breakdown"]): Receipt[] {
+  if (!breakdown) return [];
+  return breakdown.map((b) => ({
+    id: `bd-${b.k}`,
+    label: b.k,
+    source: "detected" as const,
+    detail: `${b.k} scored ${b.v.toFixed(1)} / 10 in scripted sample analysis`,
+  }));
+}
+
+function finalizeAnalysis(
+  core: AnalysisCore,
+  opts: {
+    trickCalled: string;
+    mismatch: boolean;
+    source: "sample" | "user";
+    observations: Observation[];
+    extraReceipts?: Receipt[];
+    abstainReason?: string | null;
+    confidenceOverride?: number;
+  },
+): Analysis {
+  const observations = opts.observations;
+  let confidence = opts.confidenceOverride ?? computeConfidence(observations);
+  let abstained = core.abstained;
+  let rating = core.rating;
+  let abstainReason = opts.abstainReason ?? (core.abstained ? core.workOn : null);
+
+  if (!abstained && rating !== null && confidence < MIN_CONFIDENCE_FOR_RATING) {
+    abstained = true;
+    rating = null;
+    abstainReason = `Confidence ${confidence}% is below the ${MIN_CONFIDENCE_FOR_RATING}% threshold required to publish a rating.`;
+  }
+
+  const evidenceClass = deriveEvidenceClass(observations, opts.source);
+  const receipts = [
+    ...(opts.extraReceipts ?? []),
+    ...buildReceiptsFromObservations(observations),
+    ...buildReceiptsFromBreakdown(abstained ? null : core.breakdown),
+    {
+      id: "engine-version",
+      label: "Engine",
+      source: "measured" as const,
+      detail: `Analysis produced by ${ENGINE_VERSION}`,
+    },
+  ];
+
+  return {
+    ...core,
+    observations,
+    trickCalled: opts.trickCalled,
+    mismatch: opts.mismatch,
+    source: opts.source,
+    abstained,
+    rating,
+    engineVersion: ENGINE_VERSION,
+    evidenceClass,
+    confidence,
+    receipts,
+    abstainReason,
+  };
+}
+
 export function analyzeSample(clip: SampleClip, trickCalled: string): Analysis {
   const base = SCRIPTED[clip.id];
   const mismatch = trickCalled !== clip.canonical;
@@ -86,88 +190,122 @@ export function analyzeSample(clip: SampleClip, trickCalled: string): Analysis {
         ...base.observations,
       ]
     : base.observations;
-  return { ...base, observations, trickCalled, mismatch, source: "sample" };
-}
 
-/**
- * Deterministic pseudo-random from a string, so the same clip gets the same
- * numbers on re-analysis — no dice-roll feedback.
- */
-function seeded(str: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return (h >>> 0) / 4294967295;
-}
+  const abstainReason = base.abstained
+    ? "Footage cuts before the landing is visible — rating would require guessing."
+    : null;
 
-const FAMILY_BREAKDOWN = {
-  flip: ["Pop", "Catch", "Landing", "Style"],
-  grind: ["Ollie in", "Lock-in", "Exit", "Style"],
-  air: ["Pop", "Level", "Landing", "Style"],
-} as const;
-
-function familyOf(trick: string): keyof typeof FAMILY_BREAKDOWN {
-  if (["BS 50-50", "FS Boardslide"].includes(trick)) return "grind";
-  if (["Ollie", "Nollie"].includes(trick)) return "air";
-  return "flip";
-}
-
-/**
- * Honesty contract:
- * - The lite engine CANNOT see the footage, so it never emits DETECTED for
- *   user clips. Everything is an ESTIMATE and the copy says so.
- * - Clips under 2 seconds (or with unknown duration) abstain: NO RATING.
- */
-export function analyzeUserClip(uri: string, durationSec: number | null, trickCalled: string): Analysis {
-  if (durationSec === null || durationSec < 2) {
-    return {
-      trickCalled,
-      trickOnFilm: null,
-      mismatch: false,
-      abstained: true,
-      rating: null,
-      verdict: "Can't rate this one honestly.",
-      observations: [
-        { text: "Clip is under 2 seconds — not enough footage to assess", tag: "NO EVIDENCE" },
-      ],
-      breakdown: null,
-      workOn: "Refilm with the full run-up, trick, and ride-away in frame. Aim for 4–10 seconds.",
-      styleNote: null,
-      source: "user",
-    };
-  }
-
-  const seed = seeded(uri + trickCalled);
-  const rating = Math.round((4.5 + seed * 3.5) * 2) / 2; // 4.5–8.0, .5 steps
-  const keys = FAMILY_BREAKDOWN[familyOf(trickCalled)];
-  const breakdown = keys
-    .map((k, i) => ({
-      k,
-      v: Math.round((rating + (seeded(uri + k) - 0.5) * 2 + (i === 3 ? 0.3 : 0)) * 2) / 2,
-    }))
-    .map((b) => ({ ...b, v: Math.min(9, Math.max(2, b.v)) }));
-
-  const weakest = breakdown.reduce((a, b) => (b.v < a.v ? b : a));
-
-  return {
+  return finalizeAnalysis(base, {
     trickCalled,
-    trickOnFilm: null, // honest: the lite engine did not verify the footage
-    mismatch: false,
-    abstained: false,
-    rating,
-    verdict: `Sample read for a ${trickCalled.toLowerCase()} — lite numbers, not a real read of your clip.`,
-    observations: [
+    mismatch,
+    source: "sample",
+    observations,
+    extraReceipts: [
       {
-        text: `Assuming the ${trickCalled.toLowerCase()} landed as called — LITE ENGINE can't verify footage`,
-        tag: "ESTIMATE",
+        id: "sample-clip",
+        label: "Sample clip",
+        source: "measured",
+        detail: `${clip.label} · ${clip.durationSec}s · ${clip.spot}`,
       },
-      { text: `${weakest.k} scored lowest in this generated read`, tag: "ESTIMATE" },
     ],
-    breakdown,
-    workOn: `In the full app, this is where Pegasus tells you exactly what to fix. The LITE ENGINE flags ${weakest.k.toLowerCase()} as the sample focus.`,
-    styleNote: null,
-    source: "user",
-  };
+    abstainReason,
+  });
+}
+
+function durationConfidence(durationSec: number): number {
+  if (durationSec < MIN_CLIP_DURATION_SEC) return 0;
+  if (durationSec < 4) return 15;
+  if (durationSec <= 10) return 25;
+  return 20;
+}
+
+/**
+ * User footage: never DETECTED without a real pipeline. Evidence class is ESTIMATE.
+ * Abstains when duration is insufficient. No invented ratings.
+ */
+export function analyzeUserClip(_uri: string, durationSec: number | null, trickCalled: string): Analysis {
+  if (durationSec === null || durationSec < MIN_CLIP_DURATION_SEC) {
+    const observations: Observation[] = [
+      {
+        text:
+          durationSec === null
+            ? "Clip duration unknown — not enough metadata to assess"
+            : `Clip is ${durationSec.toFixed(1)}s — under ${MIN_CLIP_DURATION_SEC}s minimum`,
+        tag: "NO EVIDENCE",
+      },
+    ];
+    return finalizeAnalysis(
+      {
+        trickOnFilm: null,
+        abstained: true,
+        rating: null,
+        verdict: "Can't rate this one honestly.",
+        observations,
+        breakdown: null,
+        workOn: "Refilm with the full run-up, trick, and ride-away in frame. Aim for 4–10 seconds.",
+        styleNote: null,
+      },
+      {
+        trickCalled,
+        mismatch: false,
+        source: "user",
+        observations,
+        extraReceipts: [
+          {
+            id: "duration",
+            label: "Clip duration",
+            source: "measured",
+            detail: durationSec === null ? "Unknown" : `${durationSec.toFixed(1)}s`,
+          },
+        ],
+        abstainReason: "Insufficient clip duration for any assessment.",
+      },
+    );
+  }
+
+  const observations: Observation[] = [
+    {
+      text: `${durationSec.toFixed(1)}s clip — duration measured from file metadata`,
+      tag: "ESTIMATE",
+    },
+    {
+      text: "No video detection pipeline connected — trick outcome must be self-reported",
+      tag: "NO EVIDENCE",
+    },
+  ];
+
+  return finalizeAnalysis(
+    {
+      trickOnFilm: null,
+      abstained: false,
+      rating: null,
+      verdict: "Log what happened — we can't read your clip yet.",
+      observations,
+      breakdown: null,
+      workOn: "Record the attempt, spot, and outcome below. That's your honest session record.",
+      styleNote: null,
+      selfReportOnly: true,
+    },
+    {
+      trickCalled,
+      mismatch: false,
+      source: "user",
+      observations,
+      extraReceipts: [
+        {
+          id: "duration",
+          label: "Clip duration",
+          source: "measured",
+          detail: `${durationSec.toFixed(1)}s measured from file metadata`,
+        },
+        {
+          id: "vision",
+          label: "Video analysis",
+          source: "none",
+          detail: "No detection pipeline — evidence class ESTIMATE, outcome self-reported",
+        },
+      ],
+      confidenceOverride: durationConfidence(durationSec),
+    },
+  );
 }

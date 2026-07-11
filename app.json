@@ -10,6 +10,8 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
+      "bundleIdentifier": "com.onflow.lite",
+      "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "OnFlow Lite uses the camera to film skate clips for analysis.",
         "NSMicrophoneUsageDescription": "OnFlow Lite records audio with your skate clips.",
@@ -17,8 +19,15 @@
       }
     },
     "android": {
+      "package": "com.onflow.lite",
+      "versionCode": 1,
       "permissions": ["CAMERA", "RECORD_AUDIO"]
     },
-    "plugins": ["expo-router"]
+    "plugins": ["expo-router"],
+    "extra": {
+      "eas": {
+        "projectId": "placeholder-replace-with-eas-init"
+      }
+    }
   }
 }

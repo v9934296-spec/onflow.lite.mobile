@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { track } from "../src/analytics";
 import { C, F } from "../src/theme";
 import { Btn, Eyebrow } from "../src/ui";
 import { TRICKS } from "../src/engine";
@@ -27,6 +28,7 @@ export default function TrickPicker() {
             key={t}
             style={({ pressed }) => [s.trickBtn, { opacity: pressed ? 0.75 : 1 }]}
             onPress={() => {
+              track("trick_selected", { trick: t });
               setTrick(t);
               router.push("/capture");
             }}

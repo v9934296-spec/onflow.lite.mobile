@@ -1,11 +1,9 @@
 # OnFlow Lite
 
-one-loop lite of OnFlow: **call it → film it → get it straight → log it.**
+One-loop lite of OnFlow: **call it → film it → get it straight → log it.**
 Standalone project — nothing here touches the main OnFlow repo.
 
 ## Setup (Windows / PowerShell)
-
-Unzip this folder to `C:\onflow-lite`, then:
 
 ```powershell
 cd C:\onflow-lite
@@ -20,11 +18,23 @@ run it once after install and any version-mismatch warnings go away.
 Scan the QR with Expo Go on your phone. No native build needed — everything here
 runs in Expo Go.
 
-## Type check
+## Type check & tests
 
 ```powershell
 npm run typecheck
+npm test
 ```
+
+## EAS builds (TestFlight / APK)
+
+```powershell
+npm i -g eas-cli
+eas login
+eas init          # links project, replaces placeholder projectId in app.json
+npm run build:preview
+```
+
+Bundle IDs (placeholder): `com.onflow.lite` on iOS and Android.
 
 ## The 60-second Lite Script
 
@@ -35,26 +45,28 @@ npm run typecheck
    the trick. It caught it."
 4. Another clip → call **Ollie** → tap the 5-stair sample. The landing isn't in
    frame, so it refuses to rate it. **That refusal is the product.**
-5. Open the session log: rating curve, component breakdown, evidence tally — the
-   session builds itself.
+5. Tap **Did you land it?** — streak builds on home and log. Open the session log.
 
-## Honesty rules (enforced in `src/engine.ts`)
+## Honesty rules (P.T.E.)
 
-- Sample clips carry scripted analyses — they show real-engine output and
-  are labeled as samples.
-- User footage never gets a `DETECTED` tag. The lite engine can't see video, so
-  every claim about your own clip is an `ESTIMATE` and the copy says so.
-- Clips under 2 seconds abstain: `NO RATING`, refilm guidance.
-- Every result screen carries the `LITE ENGINE` banner.
+See [`docs/PTE_MANIFESTO.md`](docs/PTE_MANIFESTO.md). Every analysis includes **evidenceClass**, **confidence**, **receipts**, and **engineVersion** (`pte-lite-v0.1`).
+
+- Sample clips: scripted analyses labeled as samples.
+- User footage: **ESTIMATE** only — never `DETECTED` without a real pipeline.
+- Ratings abstain when confidence &lt; 50% or clip duration is insufficient.
+- Post-result manual log: landed / missed / unsure, attempts, spot, notes.
 
 ## Structure
 
 ```
-app/            expo-router screens (index, trick, capture, analyzing, result, log)
-src/theme.ts    Bay Fade tokens (aluminum outlines, red complements volt)
-src/engine.ts   lite analysis engine
-src/charts.tsx  hand-rolled SVG rating line + breakdown bars
-src/session.tsx in-memory loop state + persisted log
-src/storage.ts  AsyncStorage
-src/ui.tsx      Btn, Tag, Card, Eyebrow, LiteBanner
+app/              expo-router screens (index, trick, capture, analyzing, result, log)
+docs/             PTE_MANIFESTO.md
+src/engine.ts     P.T.E. lite engine (abstention, receipts, versioning)
+src/progress.ts   land attempts, 7-day view, streaks
+src/logSummary.ts session stats (attempts, landed %, evidence tally)
+src/charts.tsx    hand-rolled SVG rating line + breakdown bars
+src/session.tsx   loop state, log, progress, storage warnings
+src/storage.ts    AsyncStorage log persistence
+src/analytics.ts  typed event stub (__DEV__ logs only)
+src/ui.tsx        Btn, Tag, Card, Eyebrow, LiteBanner, WeekRow, Field
 ```
