@@ -19,7 +19,7 @@ export default function Capture() {
   const redirect = getFlowRedirect("capture", { trick, analysis });
   if (redirect) return <Redirect href={redirect} />;
 
-  const calledTrick = trick;
+  const calledTrick = trick!;
 
   const showPermissionAlert = (canAskAgain: boolean) => {
     Alert.alert(
