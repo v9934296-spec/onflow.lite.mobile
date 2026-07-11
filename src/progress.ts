@@ -12,7 +12,10 @@ export interface DaySlot {
 }
 
 function toDateKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function dayLabel(d: Date): string {
@@ -49,6 +52,11 @@ export function getLast7Days(attempts: LandedAttempt[], now = new Date()): DaySl
   return slots;
 }
 
+/**
+ * Gate decision: this streak is a self-reported habit metric, not a progression
+ * score. It may be shown for engagement, but must never feed P.T.E. ratings,
+ * skill scores, evidence classes, or any claim of measured progression.
+ */
 export function getTrickStreak(attempts: LandedAttempt[], trick: string, now = new Date()): number {
   const trickAttempts = attempts.filter((a) => a.trick === trick);
   if (trickAttempts.length === 0) return 0;
