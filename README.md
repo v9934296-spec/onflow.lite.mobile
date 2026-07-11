@@ -25,16 +25,49 @@ npm run typecheck
 npm test
 ```
 
-## EAS builds (TestFlight / APK)
+## EAS setup and TestFlight
+
+The repository contains production-ready EAS profiles, but the Expo project must be linked once so Expo can assign the real project ID.
 
 ```powershell
 npm i -g eas-cli
 eas login
-eas init          # links project, replaces placeholder projectId in app.json
-npm run build:preview
+eas init
 ```
 
-Bundle IDs (placeholder): `com.onflow.lite` on iOS and Android.
+`eas init` writes the Expo-assigned `extra.eas.projectId` into `app.json`. Do not add a made-up or placeholder project ID.
+
+Then build iOS for App Store Connect:
+
+```powershell
+npm run build:production:ios
+```
+
+When the build succeeds, submit the latest build to TestFlight:
+
+```powershell
+npm run submit:ios
+```
+
+Or build and submit in one command:
+
+```powershell
+eas build --platform ios --profile production --auto-submit
+```
+
+Current application identifiers:
+
+- iOS: `com.onflow.lite`
+- Android: `com.onflow.lite`
+
+Before the first public release, confirm those identifiers are the permanent identifiers you want. Apple and Google do not let an existing app change its identifier after release.
+
+### EAS profiles
+
+- `development`: development client distributed internally
+- `preview`: internal tester build
+- `production`: store build with remote version management and automatic build-number incrementing
+- `submit.production`: TestFlight/App Store Connect submission profile
 
 ## The 60-second Lite Script
 
@@ -53,7 +86,7 @@ See [`docs/PTE_MANIFESTO.md`](docs/PTE_MANIFESTO.md). Every analysis includes **
 
 - Sample clips: scripted analyses labeled as samples.
 - User footage: **ESTIMATE** only — never `DETECTED` without a real pipeline.
-- Ratings abstain when confidence &lt; 50% or clip duration is insufficient.
+- Ratings abstain when confidence < 50% or clip duration is insufficient.
 - Post-result manual log: landed / missed / unsure, attempts, spot, notes.
 
 ## Documentation
