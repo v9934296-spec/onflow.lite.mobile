@@ -10,7 +10,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:preview": "eas build --profile preview --platform all",
-    "build:production": "eas build --profile production --platform all"
+    "build:preview:ios": "eas build --profile preview --platform ios",
+    "build:production": "eas build --profile production --platform all",
+    "build:production:ios": "eas build --profile production --platform ios",
+    "submit:ios": "eas submit --profile production --platform ios --latest"
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.2.3",
