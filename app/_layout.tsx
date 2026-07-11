@@ -26,6 +26,16 @@ function StorageWarningOverlay() {
 }
 
 function RootLayout() {
+  const { isHydrated } = useSession();
+
+  if (!isHydrated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: C.charcoal }}>
+        <StatusBar style="light" />
+      </View>
+    );
+  }
+
   return (
     <>
       <StatusBar style="light" />
