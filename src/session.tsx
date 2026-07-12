@@ -20,6 +20,8 @@ interface SessionState {
   setSelectedTrick: (trick: SelectedTrick | null) => void;
   analysis: Analysis | null;
   setAnalysis: (analysis: Analysis | null) => void;
+  pendingClipJobId: string | null;
+  setPendingClipJobId: (jobId: string | null) => void;
   log: LoggedClip[];
   attempts: LandedAttempt[];
   storageWarning: string | null;
@@ -45,6 +47,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [trick, setTrickState] = useState<string | null>(null);
   const [selectedTrick, setSelectedTrickState] = useState<SelectedTrick | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [pendingClipJobId, setPendingClipJobId] = useState<string | null>(null);
   const [log, setLog] = useState<LoggedClip[]>([]);
   const [attempts, setAttempts] = useState<LandedAttempt[]>([]);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
@@ -211,6 +214,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTrickState(null);
     setSelectedTrickState(null);
     setAnalysis(null);
+    setPendingClipJobId(null);
   }, []);
 
   return (
@@ -223,6 +227,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         setSelectedTrick,
         analysis,
         setAnalysis,
+        pendingClipJobId,
+        setPendingClipJobId,
         log,
         attempts,
         storageWarning,

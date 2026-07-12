@@ -12,6 +12,12 @@ describe("getFlowRedirect", () => {
     expect(getFlowRedirect("result", snapshot)).toBe("/capture");
   });
 
+  it("allows analyzing while a clip job is pending", () => {
+    const snapshot = { trick: "Kickflip", analysis: null, pendingClipJobId: "job-1" };
+    expect(getFlowRedirect("analyzing", snapshot)).toBeNull();
+    expect(getFlowRedirect("result", snapshot)).toBe("/capture");
+  });
+
   it("rejects stale analysis from a previously selected trick", () => {
     const snapshot = {
       trick: "Tre Flip",

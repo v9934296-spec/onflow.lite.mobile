@@ -196,6 +196,11 @@ export default function Home() {
             {selectedTrick ? (
               <>
                 <Text style={s.selectedHint}>Current trick: {selectedTrick.canonicalName}</Text>
+                <Btn
+                  label="Film clip"
+                  onPress={() => router.push("/capture")}
+                  disabled={sessionBusy}
+                />
                 <View style={s.outcomeRow}>
                   <Btn
                     label={loggingAttempt ? "Saving…" : "Land"}

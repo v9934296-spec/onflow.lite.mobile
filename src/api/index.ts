@@ -27,6 +27,14 @@ export {
 export { checkHealth, parseHealthResponse } from "./health";
 export { createSkateSession, fetchSkateSession, parseSkateSession } from "./sessionApi";
 export {
+  completeSessionClipUpload,
+  initiateSessionClipUpload,
+  uploadClipToPresignedUrl,
+  uploadClipToSession,
+} from "./clipApi";
+export { fetchClipJob } from "./jobApi";
+export { parseClipJob, type ClipJob, type ClipJobStatus } from "./types/clipJob";
+export {
   DEFAULT_REQUEST_TIMEOUT_MS,
   type ApiError,
   type ApiErrorKind,

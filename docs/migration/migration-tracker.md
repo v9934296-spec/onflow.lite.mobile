@@ -49,8 +49,8 @@ Use for every migrated feature:
 | 5 | Attempt logging | Complete | Pending manual | Yes (111) | `eaa71e8` |
 | 6 | End-session recap | Complete | Pending manual | Yes (111) | `30579af` |
 | 7 | Session history | Complete | Pending manual | Yes (118) | `f4f542b` |
-| 8 | Clip selection and upload | Blocked by Milestone 1 | No | No | — |
-| 9 | Analysis job status | Blocked by upload | No | No | — |
+| 8 | Clip selection and upload | Complete | Pending manual | Yes | — |
+| 9 | Analysis job status | Complete | Pending manual | Yes | — |
 | 10 | Feed and social features | Deferred | No | No | — |
 | 11 | Subscriptions and paywall | Deferred | No | No | — |
 | 12 | Notifications and polish | Deferred | No | No | — |

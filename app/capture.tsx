@@ -2,24 +2,35 @@ import React, { useState } from "react";
 import { View, Text, Pressable, StyleSheet, Alert, Linking } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { track } from "../src/analytics";
+import { uploadClipToSession } from "../src/api/clipApi";
 import { C, F } from "../src/theme";
 import { Btn, Eyebrow } from "../src/ui";
 import { SAMPLE_CLIPS, analyzeSample, analyzeUserClip } from "../src/engine";
 import { getFlowRedirect } from "../src/flow";
+import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSession } from "../src/session";
+
+function resolveMimeType(asset: ImagePicker.ImagePickerAsset): string {
+  if (asset.mimeType === "video/quicktime") return "video/quicktime";
+  return "video/mp4";
+}
 
 export default function Capture() {
   const router = useRouter();
-  const { trick, analysis, setAnalysis } = useSession();
+  const { trick, analysis, selectedTrick, setAnalysis, setPendingClipJobId } = useSession();
+  const { activeSession, hasActiveSession } = useSkateSession();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
 
   const redirect = getFlowRedirect("capture", { trick, analysis });
   if (redirect) return <Redirect href={redirect} />;
 
   const calledTrick = trick!;
+  const canUploadToSession = hasActiveSession && Boolean(activeSession?.id);
 
   const showPermissionAlert = (canAskAgain: boolean) => {
     Alert.alert(
@@ -36,9 +47,54 @@ export default function Capture() {
     );
   };
 
+  const uploadUserClip = async (asset: ImagePicker.ImagePickerAsset, called: string) => {
+    if (!activeSession?.id) {
+      throw new Error("No active session to upload into.");
+    }
+
+    const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+    if (!fileInfo.exists || typeof fileInfo.size !== "number" || fileInfo.size <= 0) {
+      throw new Error("Could not read the video file size.");
+    }
+
+    const durationSec = typeof asset.duration === "number" ? asset.duration / 1000 : 2;
+    const widthPx = typeof asset.width === "number" && asset.width > 0 ? asset.width : 1920;
+    const heightPx = typeof asset.height === "number" && asset.height > 0 ? asset.height : 1080;
+
+    setStatusLabel("Uploading clip…");
+    const uploaded = await uploadClipToSession({
+      sessionId: activeSession.id,
+      fileUri: asset.uri,
+      mimeType: resolveMimeType(asset),
+      durationSeconds: durationSec,
+      widthPx,
+      heightPx,
+      sizeBytes: fileInfo.size,
+      clientHintTrickId: selectedTrick?.trickId ?? null,
+    });
+
+    if (!uploaded.ok) {
+      throw new Error(uploaded.error.message);
+    }
+
+    setAnalysis(null);
+    setPendingClipJobId(uploaded.data);
+    track("capture_completed", { source: "user_upload", trick: called, job_id: uploaded.data });
+    router.push("/analyzing");
+  };
+
+  const runUserClipLocal = (asset: ImagePicker.ImagePickerAsset, called: string) => {
+    const durationSec = typeof asset.duration === "number" ? asset.duration / 1000 : null;
+    setPendingClipJobId(null);
+    setAnalysis(analyzeUserClip(asset.uri, durationSec, called));
+    track("capture_completed", { source: "user", trick: called });
+    router.push("/analyzing");
+  };
+
   const runUserClip = async (fromCamera: boolean) => {
     if (busy) return;
     setBusy(true);
+    setStatusLabel(null);
 
     try {
       if (fromCamera) {
@@ -66,22 +122,25 @@ export default function Capture() {
         return;
       }
 
-      const durationSec = typeof asset.duration === "number" ? asset.duration / 1000 : null;
-      setAnalysis(analyzeUserClip(asset.uri, durationSec, calledTrick));
-      track("capture_completed", { source: "user", trick: calledTrick });
-      router.push("/analyzing");
+      if (canUploadToSession) {
+        await uploadUserClip(asset, calledTrick);
+      } else {
+        runUserClipLocal(asset, calledTrick);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown capture error";
       track("capture_failed", { source: fromCamera ? "camera" : "library", message });
-      Alert.alert("Couldn't open the clip", "Nothing was logged. Try the camera or library again.");
+      Alert.alert("Couldn't upload the clip", message);
     } finally {
       setBusy(false);
+      setStatusLabel(null);
     }
   };
 
   const runSampleClip = (clip: (typeof SAMPLE_CLIPS)[number]) => {
     if (busy) return;
     setBusy(true);
+    setPendingClipJobId(null);
     setAnalysis(analyzeSample(clip, calledTrick));
     track("capture_completed", { source: "sample", trick: calledTrick, clipId: clip.id });
     router.push("/analyzing");
@@ -94,6 +153,12 @@ export default function Capture() {
         <Text style={s.called}>
           Called: <Text style={{ color: C.volt, fontFamily: F.bold }}>{calledTrick}</Text>
         </Text>
+        {canUploadToSession ? (
+          <Text style={s.modeHint}>Active session — your clip uploads for real analysis.</Text>
+        ) : (
+          <Text style={s.modeHint}>No active session — local self-report mode only.</Text>
+        )}
+        {statusLabel ? <Text style={s.status}>{statusLabel}</Text> : null}
       </View>
 
       <Eyebrow>SAMPLE CLIPS · SCRIPTED LITE ANALYSES</Eyebrow>
@@ -111,7 +176,7 @@ export default function Capture() {
         </Pressable>
       ))}
 
-      <Eyebrow>YOUR OWN FOOTAGE · SELF-REPORT · ESTIMATE ONLY</Eyebrow>
+      <Eyebrow>YOUR OWN FOOTAGE{canUploadToSession ? " · UPLOAD" : " · SELF-REPORT"}</Eyebrow>
       <View style={{ gap: 10 }}>
         <Btn label="Film with camera" onPress={() => void runUserClip(true)} disabled={busy} />
         <Btn
@@ -132,6 +197,8 @@ export default function Capture() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 12 },
   called: { fontFamily: F.body, fontSize: 13, color: C.offwhite },
+  modeHint: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 2 },
+  status: { fontFamily: F.mono, fontSize: 11, color: C.volt, marginTop: 4 },
   clipCard: {
     backgroundColor: C.charcoal2,
     borderWidth: 1,
