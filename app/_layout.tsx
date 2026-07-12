@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Stack } from "expo-router";
 import {
   useFonts,
@@ -10,9 +10,42 @@ import { SpaceMono_400Regular } from "@expo-google-fonts/space-mono";
 import { View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { checkHealth, guardApiBaseUrlAtStartup } from "../src/api";
+import { ApiConfigBanner } from "../src/components/ApiConfigBanner";
 import { SessionProvider, useSession } from "../src/session";
 import { StorageWarningBanner } from "../src/ui";
 import { C } from "../src/theme";
+
+function ApiStartupEffects() {
+  useEffect(() => {
+    guardApiBaseUrlAtStartup();
+
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      void checkHealth()
+        .then((result) => {
+          if (result.ok) {
+            console.info("[api] health check passed", result.data.status);
+          } else {
+            console.warn("[api] health check failed", result.error.kind, result.error.message);
+          }
+        })
+        .catch((error) => {
+          console.warn("[api] health check failed", error);
+        });
+    }
+  }, []);
+
+  return null;
+}
+
+function ApiConfigOverlay() {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ position: "absolute", top: insets.top, left: 0, right: 0, zIndex: 99 }}>
+      <ApiConfigBanner />
+    </View>
+  );
+}
 
 function StorageWarningOverlay() {
   const { storageWarning, dismissStorageWarning } = useSession();
@@ -39,6 +72,8 @@ function RootLayout() {
   return (
     <>
       <StatusBar style="light" />
+      <ApiStartupEffects />
+      <ApiConfigOverlay />
       <StorageWarningOverlay />
       <Stack
         screenOptions={{
