@@ -71,7 +71,7 @@ function devLog(method: string, url: string, status: number): void {
   }
 }
 
-/** Centralized fetch wrapper. Returns ApiResult — never throws for HTTP/network errors. */
+/** Centralized fetch wrapper. Returns ApiResult — never throws for expected API/storage failures. */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
   if (!isExpoApiUrlConfigured()) {
     return failure("configuration", configurationFailureMessage());
@@ -94,11 +94,20 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   };
 
   if (options.auth) {
-    const authHeaders = await buildAuthHeaders();
-    if (!authHeaders) {
-      return failure("unauthorized", "Not signed in.");
+    try {
+      const authHeaders = await buildAuthHeaders();
+      if (!authHeaders) {
+        return failure("unauthorized", "Not signed in.");
+      }
+      Object.assign(headers, authHeaders);
+    } catch (error) {
+      return failure(
+        "storage",
+        error instanceof Error
+          ? error.message
+          : "Secure credential storage is unavailable on this device.",
+      );
     }
-    Object.assign(headers, authHeaders);
   }
 
   let body: string | undefined;
