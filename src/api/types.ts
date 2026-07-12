@@ -32,6 +32,7 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   body?: unknown;
   timeoutMs?: number;
+  signal?: AbortSignal;
   /** When true, attach Authorization header from auth provider if available. */
   auth?: boolean;
 }
