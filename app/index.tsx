@@ -36,9 +36,12 @@ export default function Home() {
         <Text style={s.sub}>
           One clip in, honest feedback out. No fake numbers — if we can't see it, we say so.
         </Text>
-        {user?.email ? (
+        {user ? (
           <Text style={s.signedInAs}>
-            Signed in as <Text style={{ color: C.offwhite, fontFamily: F.bold }}>{user.email}</Text>
+            Signed in as{" "}
+            <Text style={{ color: C.offwhite, fontFamily: F.bold }}>
+              {user.email || user.user_id}
+            </Text>
           </Text>
         ) : null}
       </View>

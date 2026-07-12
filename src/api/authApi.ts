@@ -18,9 +18,9 @@ function parseConsentStatus(raw: unknown): ConsentStatus {
 export function parseAccountMe(raw: unknown): AccountMe | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const userId = typeof o.user_id === "string" ? o.user_id : "";
-  const email = typeof o.email === "string" ? o.email : "";
-  if (!userId || !email) return null;
+  const userId = typeof o.user_id === "string" ? o.user_id.trim() : "";
+  if (!userId) return null;
+  const email = typeof o.email === "string" ? o.email.trim() : "";
   return {
     user_id: userId,
     email,
@@ -140,7 +140,7 @@ export async function fetchAccountMe(): Promise<ApiResult<AccountMe>> {
   if (!parsed) {
     return {
       ok: false,
-      error: { kind: "malformed", message: "Account response was missing user_id or email." },
+      error: { kind: "malformed", message: "Account response was missing user_id." },
     };
   }
   return { ok: true, data: parsed, status: result.status };

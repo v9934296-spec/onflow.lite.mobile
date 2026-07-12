@@ -43,9 +43,24 @@ describe("parseAccountMe", () => {
     expect(parsed?.consent.granted).toBe(false);
   });
 
-  it("rejects missing user_id or email", () => {
-    expect(parseAccountMe({ user_id: "u1" })).toBeNull();
+  it("rejects missing user_id", () => {
     expect(parseAccountMe({ email: "a@b.com" })).toBeNull();
     expect(parseAccountMe(null)).toBeNull();
+  });
+
+  it("accepts account without email when user_id is present", () => {
+    const parsed = parseAccountMe({ user_id: "u1" });
+    expect(parsed).toEqual({
+      user_id: "u1",
+      email: "",
+      tier: "free",
+      profile_image_url: null,
+      consent: {
+        granted: false,
+        granted_at: null,
+        copy_version: null,
+        source: null,
+      },
+    });
   });
 });

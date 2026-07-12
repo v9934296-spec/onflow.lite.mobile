@@ -1,5 +1,5 @@
 import * as AppleAuthentication from "expo-apple-authentication";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,12 +14,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { createEmailSession, signInWithApple } from "../src/api/authApi";
 import { isExpoApiUrlConfigured, missingApiBaseUserMessage } from "../src/api/config";
-import { useAccount } from "../src/auth/accountContext";
+import { useAuth } from "../src/auth/authContext";
 import { saveOnflowSession } from "../src/auth/onflowSession";
 import { C, F } from "../src/theme";
 import { Btn, Eyebrow, Field } from "../src/ui";
 
 const ENABLE_EMAIL_AUTH = typeof __DEV__ !== "undefined" && __DEV__;
+const IS_IOS = Platform.OS === "ios";
+
+function queryParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 function isValidEmail(value: string): boolean {
   const t = value.trim();
@@ -27,10 +32,10 @@ function isValidEmail(value: string): boolean {
 }
 
 export default function SignInScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { reason } = useLocalSearchParams<{ reason?: string }>();
-  const { refreshUser } = useAccount();
+  const params = useLocalSearchParams<{ reason?: string | string[] }>();
+  const reason = queryParam(params.reason);
+  const { completeSignIn } = useAuth();
 
   const [email, setEmail] = useState("");
   const [inviteCode, setInviteCode] = useState("");
@@ -39,23 +44,23 @@ export default function SignInScreen() {
   const [appleAvailable, setAppleAvailable] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS !== "ios") return;
+    if (!IS_IOS) return;
     void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
   }, []);
 
   const finishSignIn = useCallback(
     async (session: { token: string; userId: string; email: string }) => {
       await saveOnflowSession(session);
-      const ok = await refreshUser();
+      const ok = await completeSignIn();
       if (!ok) {
         throw new Error("Signed in but could not load your account. Try again.");
       }
-      router.replace("/");
     },
-    [refreshUser, router],
+    [completeSignIn],
   );
 
   const handleApple = useCallback(async () => {
+    if (busy) return;
     if (!isExpoApiUrlConfigured()) {
       setError(missingApiBaseUserMessage());
       return;
@@ -85,9 +90,10 @@ export default function SignInScreen() {
     } finally {
       setBusy(false);
     }
-  }, [finishSignIn]);
+  }, [busy, finishSignIn]);
 
   const handleEmail = useCallback(async () => {
+    if (busy) return;
     if (!isExpoApiUrlConfigured()) {
       setError(missingApiBaseUserMessage());
       return;
@@ -109,12 +115,14 @@ export default function SignInScreen() {
     } finally {
       setBusy(false);
     }
-  }, [email, inviteCode, finishSignIn]);
+  }, [busy, email, inviteCode, finishSignIn]);
+
+  const showAndroidNotice = !IS_IOS && !ENABLE_EMAIL_AUTH;
 
   return (
     <KeyboardAvoidingView
       style={[s.screen, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={IS_IOS ? "padding" : undefined}
     >
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
         <View style={s.header}>
@@ -129,18 +137,25 @@ export default function SignInScreen() {
           {!isExpoApiUrlConfigured() ? (
             <Text style={s.warn}>{missingApiBaseUserMessage()}</Text>
           ) : null}
+          {showAndroidNotice ? (
+            <Text style={s.warn}>Sign-in is available on iOS. Android support is coming soon.</Text>
+          ) : null}
         </View>
 
         {error ? <Text style={s.error}>{error}</Text> : null}
 
         {appleAvailable ? (
-          <AppleAuthentication.AppleAuthenticationButton
-            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-            cornerRadius={10}
-            style={s.appleBtn}
-            onPress={() => void handleApple()}
-          />
+          <View pointerEvents={busy ? "none" : "auto"} style={{ opacity: busy ? 0.45 : 1 }}>
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+              cornerRadius={10}
+              style={s.appleBtn}
+              onPress={() => void handleApple()}
+            />
+          </View>
+        ) : IS_IOS && !appleAvailable ? (
+          <Text style={s.warn}>Apple Sign-In is not available on this device.</Text>
         ) : null}
 
         {ENABLE_EMAIL_AUTH ? (
@@ -153,6 +168,7 @@ export default function SignInScreen() {
               keyboardType="email-address"
               autoComplete="email"
               placeholder="you@example.com"
+              editable={!busy}
             />
             <Field
               label="Invite code (optional)"
@@ -160,6 +176,7 @@ export default function SignInScreen() {
               onChangeText={setInviteCode}
               autoCapitalize="characters"
               placeholder="grind-01"
+              editable={!busy}
             />
             <Btn label="Continue with email" onPress={() => void handleEmail()} disabled={busy} />
           </View>

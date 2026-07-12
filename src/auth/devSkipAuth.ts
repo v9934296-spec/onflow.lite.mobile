@@ -1,4 +1,3 @@
-import { missingApiBaseUserMessage } from "../api/config";
 import { createEmailSession } from "../api/authApi";
 import { saveOnflowSession } from "./onflowSession";
 
@@ -31,10 +30,3 @@ export async function bootstrapDevSessionIfNeeded(): Promise<{ ok: boolean; erro
   }
 }
 
-export function devSkipConfigError(): string | null {
-  if (!isDevSkipSignInEnabled()) return null;
-  if (!process.env.EXPO_PUBLIC_API_URL?.trim()) {
-    return missingApiBaseUserMessage();
-  }
-  return null;
-}
