@@ -22,6 +22,48 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run bundle:ios
+
+      - name: Typecheck
+        id: typecheck
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
+
+      - name: Unit tests
+        id: tests
+        if: always()
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee tests.log
+
+      - name: iOS bundle check
+        id: bundle
+        if: always() && steps.typecheck.outcome == 'success' && steps.tests.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run bundle:ios 2>&1 | tee bundle-ios.log
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-logs
+          path: |
+            typecheck.log
+            tests.log
+            bundle-ios.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Enforce validation result
+        if: always()
+        run: |
+          if [ "${{ steps.typecheck.outcome }}" != "success" ] || \
+             [ "${{ steps.tests.outcome }}" != "success" ] || \
+             [ "${{ steps.bundle.outcome }}" != "success" ]; then
+            echo "One or more validation gates failed. Download the validation-logs artifact."
+            exit 1
+          fi
