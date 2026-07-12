@@ -1,9 +1,9 @@
 import React, { useRef, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Pressable, Alert } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { C, F } from "../src/theme";
-import { Btn, Card, Eyebrow, Tag, LiteBanner, Field } from "../src/ui";
+import { Btn, Card, Eyebrow, Field, LiteBanner, Tag } from "../src/ui";
 import { getFlowRedirect } from "../src/flow";
 import { useSession } from "../src/session";
 import { ManualOutcome } from "../src/types";
@@ -13,16 +13,23 @@ function OutcomeBtn({
   selected,
   onPress,
   color,
+  disabled,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   color: string;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
-      style={[s.outcomeBtn, selected ? { borderColor: color, backgroundColor: C.charcoal3 } : null]}
+      style={[
+        s.outcomeBtn,
+        selected ? { borderColor: color, backgroundColor: C.charcoal3 } : null,
+        disabled ? { opacity: 0.5 } : null,
+      ]}
     >
       <Text style={[s.outcomeBtnText, selected ? { color } : null]}>{label}</Text>
     </Pressable>
@@ -43,16 +50,20 @@ export default function Result() {
   const redirect = getFlowRedirect("result", { trick, analysis });
   if (redirect) return <Redirect href={redirect} />;
 
-  const a = analysis!;
-  const isSelfReport = a.selfReportOnly === true;
+  const currentAnalysis = analysis!;
+  const isSelfReport = currentAnalysis.selfReportOnly === true;
   const bannerMessage = isSelfReport
     ? "SELF-REPORT — no detection pipeline. Log what actually happened."
-    : a.source === "sample"
+    : currentAnalysis.source === "sample"
       ? "SAMPLE SCRIPT — scripted analysis for illustration, not your footage."
       : undefined;
 
   const evidenceColor =
-    a.evidenceClass === "DETECTED" ? C.volt : a.evidenceClass === "ESTIMATE" ? C.amber : C.red;
+    currentAnalysis.evidenceClass === "DETECTED"
+      ? C.volt
+      : currentAnalysis.evidenceClass === "ESTIMATE"
+        ? C.amber
+        : C.red;
 
   const handleSave = async () => {
     if (!outcome || submitLock.current) return;
@@ -68,8 +79,10 @@ export default function Result() {
       });
       router.replace("/log");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The attempt could not be logged.";
-      Alert.alert("Couldn't save the attempt", message);
+      Alert.alert(
+        "Couldn't save the attempt",
+        error instanceof Error ? error.message : "The attempt could not be logged.",
+      );
     } finally {
       submitLock.current = false;
       setSubmitting(false);
@@ -78,7 +91,7 @@ export default function Result() {
 
   const handleAnotherClip = () => {
     setAnalysis(null);
-    router.back();
+    router.replace("/capture");
   };
 
   return (
@@ -88,45 +101,53 @@ export default function Result() {
         s.content,
         { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 },
       ]}
-      keyboardShouldPersistTaps="handled"
     >
       <LiteBanner message={bannerMessage} />
 
       <View style={{ gap: 2 }}>
         <Eyebrow>
-          CALLED: <Text style={{ color: a.mismatch ? C.red : C.volt }}>{a.trickCalled.toUpperCase()}</Text>
-          {a.trickOnFilm && a.mismatch ? `  ·  ON FILM: ${a.trickOnFilm.toUpperCase()}` : ""}
+          CALLED:{" "}
+          <Text style={{ color: currentAnalysis.mismatch ? C.red : C.volt }}>
+            {currentAnalysis.trickCalled.toUpperCase()}
+          </Text>
+          {currentAnalysis.trickOnFilm && currentAnalysis.mismatch
+            ? `  ·  ON FILM: ${currentAnalysis.trickOnFilm.toUpperCase()}`
+            : ""}
         </Eyebrow>
-        <Text style={s.title}>{a.trickOnFilm ?? a.trickCalled}</Text>
-        <Text style={s.engineStamp}>{a.engineVersion}</Text>
+        <Text style={s.title}>
+          {currentAnalysis.trickOnFilm ?? currentAnalysis.trickCalled}
+        </Text>
+        <Text style={s.engineStamp}>{currentAnalysis.engineVersion}</Text>
       </View>
 
-      <Card accent={a.abstained ? C.red : isSelfReport ? C.amber : C.volt}>
+      <Card accent={currentAnalysis.abstained ? C.red : isSelfReport ? C.amber : C.volt}>
         <View style={s.metaRow}>
-          <Tag kind={a.evidenceClass} />
-          <Text style={[s.confidence, { color: evidenceColor }]}>{a.confidence}% confidence</Text>
+          <Tag kind={currentAnalysis.evidenceClass} />
+          <Text style={[s.confidence, { color: evidenceColor }]}>
+            {currentAnalysis.confidence}% confidence
+          </Text>
         </View>
         <View style={s.ratingRow}>
-          {a.abstained ? (
+          {currentAnalysis.abstained ? (
             <Text style={s.noRating}>NO RATING</Text>
-          ) : a.rating !== null ? (
+          ) : currentAnalysis.rating !== null ? (
             <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
-              <Text style={s.rating}>{a.rating.toFixed(1)}</Text>
+              <Text style={s.rating}>{currentAnalysis.rating.toFixed(1)}</Text>
               <Text style={s.outOf}>/ 10</Text>
             </View>
           ) : (
             <Text style={s.selfReport}>MANUAL LOG</Text>
           )}
-          <Text style={s.verdict}>{a.verdict}</Text>
+          <Text style={s.verdict}>{currentAnalysis.verdict}</Text>
         </View>
-        {a.abstainReason ? (
-          <Text style={s.abstainReason}>Abstain: {a.abstainReason}</Text>
+        {currentAnalysis.abstainReason ? (
+          <Text style={s.abstainReason}>Abstain: {currentAnalysis.abstainReason}</Text>
         ) : null}
       </Card>
 
       <Card>
         <Eyebrow color={C.volt}>RECEIPTS</Eyebrow>
-        {a.receipts.map((receipt) => (
+        {currentAnalysis.receipts.map((receipt) => (
           <View key={receipt.id} style={s.receiptRow}>
             <Text style={s.receiptLabel}>{receipt.label.toUpperCase()}</Text>
             <Text style={s.receiptDetail}>{receipt.detail}</Text>
@@ -136,8 +157,8 @@ export default function Result() {
 
       <View style={{ gap: 10 }}>
         <Eyebrow>OBSERVATIONS</Eyebrow>
-        {a.observations.map((observation, index) => (
-          <View key={index} style={s.obsRow}>
+        {currentAnalysis.observations.map((observation, index) => (
+          <View key={`${observation.tag}-${index}`} style={s.obsRow}>
             <Text style={s.obsText}>{observation.text}</Text>
             <Tag kind={observation.tag} />
           </View>
@@ -147,9 +168,7 @@ export default function Result() {
       <Card accent={C.volt}>
         <Eyebrow color={C.volt}>LOG THIS ATTEMPT</Eyebrow>
         <Text style={s.body}>
-          {a.abstained
-            ? "The engine abstained, but your self-report can still preserve what happened."
-            : "What happened? This is your record — not a guess from the engine."}
+          What happened? This is your record — not a guess from the engine.
         </Text>
 
         <View style={s.outcomeRow}>
@@ -158,18 +177,21 @@ export default function Result() {
             selected={outcome === "landed"}
             onPress={() => setOutcome("landed")}
             color={C.volt}
+            disabled={submitting}
           />
           <OutcomeBtn
             label="Missed"
             selected={outcome === "missed"}
             onPress={() => setOutcome("missed")}
             color={C.red}
+            disabled={submitting}
           />
           <OutcomeBtn
             label="Unsure"
             selected={outcome === "unsure"}
             onPress={() => setOutcome("unsure")}
             color={C.amber}
+            disabled={submitting}
           />
         </View>
 
@@ -180,7 +202,12 @@ export default function Result() {
           keyboardType="number-pad"
           placeholder="1"
         />
-        <Field label="SPOT" value={spot} onChangeText={setSpot} placeholder="Where did you skate?" />
+        <Field
+          label="SPOT"
+          value={spot}
+          onChangeText={setSpot}
+          placeholder="Where did you skate?"
+        />
         <Field
           label="NOTES"
           value={notes}
@@ -191,19 +218,32 @@ export default function Result() {
           style={{ minHeight: 72, textAlignVertical: "top" }}
         />
 
-        <Btn label="Save to log" onPress={() => void handleSave()} disabled={!outcome || submitting} />
+        <Btn
+          label={submitting ? "Saving…" : "Save to log"}
+          onPress={() => void handleSave()}
+          disabled={!outcome || submitting}
+        />
       </Card>
 
       <Card accent={C.red}>
         <Eyebrow color={C.red}>WORK ON</Eyebrow>
-        <Text style={s.body}>{a.workOn}</Text>
+        <Text style={s.body}>{currentAnalysis.workOn}</Text>
       </Card>
 
-      {a.styleNote ? <Text style={s.styleNote}>Style: {a.styleNote}</Text> : null}
+      {currentAnalysis.styleNote ? (
+        <Text style={s.styleNote}>Style: {currentAnalysis.styleNote}</Text>
+      ) : null}
 
       <View style={{ gap: 10, marginTop: 8 }}>
-        {a.abstained ? <Btn label="Refilm the clip" onPress={handleAnotherClip} /> : null}
-        <Btn label="Another clip" variant="ghost" onPress={handleAnotherClip} />
+        {currentAnalysis.abstained ? (
+          <Btn label="Refilm the clip" onPress={handleAnotherClip} disabled={submitting} />
+        ) : null}
+        <Btn
+          label="Another clip"
+          variant="ghost"
+          onPress={handleAnotherClip}
+          disabled={submitting}
+        />
       </View>
     </ScrollView>
   );
