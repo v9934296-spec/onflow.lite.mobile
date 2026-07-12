@@ -1,13 +1,13 @@
 import React, { useEffect } from "react";
-import { View, Text, ScrollView, StyleSheet, Alert, Share, Pressable } from "react-native";
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
 import { getBestTrickStreak, getLast7Days, getTrickStreak } from "../src/progress";
 import { summarizeLog } from "../src/logSummary";
 import { C, F } from "../src/theme";
-import { Btn, Card, Eyebrow, WeekRow, Tag } from "../src/ui";
-import { RatingLine, BreakdownBars } from "../src/charts";
+import { Btn, Card, Eyebrow, Tag, WeekRow } from "../src/ui";
+import { BreakdownBars, RatingLine } from "../src/charts";
 import { useSession } from "../src/session";
 
 export default function Log() {
@@ -24,7 +24,8 @@ export default function Log() {
   const summary = summarizeLog(userLog);
   const rated = log.filter((entry) => entry.analysis.rating !== null);
   const ratings = rated.map((entry) => entry.analysis.rating as number);
-  const ratingsAreSamples = rated.length > 0 && rated.every((entry) => entry.analysis.source === "sample");
+  const ratingsAreSamples =
+    rated.length > 0 && rated.every((entry) => entry.analysis.source === "sample");
   const latest = rated.length > 0 ? rated[rated.length - 1] : null;
   const week = getLast7Days(attempts);
   const bestStreak = getBestTrickStreak(attempts);
@@ -60,7 +61,7 @@ export default function Log() {
     ]);
   };
 
-  const outcomeLabel = (entry: (typeof log)[0]) => {
+  const outcomeLabel = (entry: (typeof log)[number]) => {
     const outcome =
       entry.manualLog?.manualOutcome ??
       (entry.landed === true ? "landed" : entry.landed === false ? "missed" : null);
@@ -75,7 +76,7 @@ export default function Log() {
       <ScrollView contentContainerStyle={[s.content, { paddingTop: insets.top + 16 }]}>
         <Eyebrow>CLIP LOG · UPDATED {dateLabel}</Eyebrow>
 
-        {userLog.length > 0 && (
+        {userLog.length > 0 ? (
           <Card>
             <Eyebrow color={C.volt}>SELF-REPORTED SESSION SUMMARY</Eyebrow>
             <Text style={s.summaryLine}>
@@ -98,9 +99,9 @@ export default function Log() {
               <Text style={s.tallyText}>{summary.evidenceTally["NO EVIDENCE"]}</Text>
             </View>
           </Card>
-        )}
+        ) : null}
 
-        {attempts.length > 0 && (
+        {attempts.length > 0 ? (
           <Card>
             <Eyebrow color={C.volt}>SELF-REPORTED PROGRESS · LAST 7 DAYS</Eyebrow>
             <WeekRow days={week} />
@@ -111,25 +112,29 @@ export default function Log() {
               </Text>
             ) : null}
           </Card>
-        )}
+        ) : null}
 
         {log.length === 0 ? (
           <View style={s.empty}>
             <Text style={s.emptyTitle}>Nothing logged yet.</Text>
-            <Text style={s.emptySub}>Film a clip, log the outcome — your session builds itself.</Text>
+            <Text style={s.emptySub}>
+              Film a clip, log the outcome — your session builds itself.
+            </Text>
           </View>
         ) : (
           <>
-            {ratings.length > 0 && (
+            {ratings.length > 0 ? (
               <Card>
                 <Eyebrow color={C.volt}>
-                  {ratingsAreSamples ? "SAMPLE P.T.E. · DEMO CLIP RATINGS" : "P.T.E. · RATING OVER SESSION"}
+                  {ratingsAreSamples
+                    ? "SAMPLE P.T.E. · DEMO CLIP RATINGS"
+                    : "P.T.E. · RATING OVER SESSION"}
                 </Eyebrow>
                 <RatingLine ratings={ratings} />
               </Card>
-            )}
+            ) : null}
 
-            {latest?.analysis.breakdown && (
+            {latest?.analysis.breakdown ? (
               <Card>
                 <Eyebrow color={C.volt}>
                   {latest.analysis.source === "sample" ? "SAMPLE · " : "LAST CLIP · "}
@@ -137,13 +142,14 @@ export default function Log() {
                 </Eyebrow>
                 <BreakdownBars items={latest.analysis.breakdown} />
               </Card>
-            )}
+            ) : null}
 
             {log.map((entry, index) => {
               const trick = entry.analysis.trickOnFilm ?? entry.analysis.trickCalled;
               const trickStreak =
                 entry.analysis.source === "user" ? getTrickStreak(attempts, trick) : 0;
               const outcome = outcomeLabel(entry);
+
               return (
                 <View key={entry.id} style={s.logCard}>
                   {entry.analysis.rating !== null ? (
@@ -157,10 +163,12 @@ export default function Log() {
                   ) : (
                     <Text style={[s.logRating, { color: C.dim, fontSize: 14 }]}>N/R</Text>
                   )}
+
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={s.logTrick}>{trick}</Text>
                     <Text style={s.logMeta}>
-                      clip {index + 1} · {entry.analysis.source === "sample" ? "sample demo" : "your footage"} ·{" "}
+                      clip {index + 1} ·{" "}
+                      {entry.analysis.source === "sample" ? "sample demo" : "your footage"} ·{" "}
                       {entry.analysis.evidenceClass}
                       {entry.manualLog
                         ? ` · ${entry.manualLog.attempts} attempt${entry.manualLog.attempts === 1 ? "" : "s"}`
@@ -175,6 +183,7 @@ export default function Log() {
                     ) : null}
                     <Text style={s.engineStamp}>{entry.analysis.engineVersion}</Text>
                   </View>
+
                   <Pressable onPress={() => handleDelete(entry.id, trick)} hitSlop={8}>
                     <Text style={s.deleteBtn}>✕</Text>
                   </Pressable>
@@ -193,12 +202,12 @@ export default function Log() {
             router.push("/trick");
           }}
         />
-        {log.length > 0 && (
+        {log.length > 0 ? (
           <>
             <Btn label="Export log" variant="ghost" onPress={() => void handleExport()} />
             <Btn label="Clear log" variant="red" onPress={handleClear} />
           </>
-        )}
+        ) : null}
         <Btn label="Home" variant="ghost" onPress={() => router.replace("/")} />
       </View>
     </View>
