@@ -2,6 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const uploadAsync = vi.fn(async () => ({ status: 200, headers: {}, body: "" }));
 const cancelAsync = vi.fn(async () => undefined);
+const createUploadTask = vi.fn(
+  (
+    _url: string,
+    _fileUri: string,
+    _options: unknown,
+    callback?: (data: { totalBytesSent: number; totalBytesExpectedToSend: number }) => void,
+  ) => {
+    callback?.({ totalBytesSent: 5, totalBytesExpectedToSend: 10 });
+    return { uploadAsync, cancelAsync };
+  },
+);
 
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
@@ -17,12 +28,7 @@ vi.mock("expo-constants", () => ({
 vi.mock("expo-file-system", () => ({
   FileSystemUploadType: { BINARY_CONTENT: 0 },
   FileSystemSessionType: { FOREGROUND: 1 },
-  createUploadTask: vi.fn(
-    (_url: string, _fileUri: string, _options: unknown, callback?: (data: { totalBytesSent: number; totalBytesExpectedToSend: number }) => void) => {
-      callback?.({ totalBytesSent: 5, totalBytesExpectedToSend: 10 });
-      return { uploadAsync, cancelAsync };
-    },
-  ),
+  createUploadTask,
 }));
 
 import { resetAuthHooks, setAuthTokenProvider } from "../../api/auth";
@@ -41,8 +47,10 @@ describe("clipApi", () => {
     global.fetch = fetchMock;
     resetAuthHooks();
     setAuthTokenProvider(async () => "test-token");
-    uploadAsync.mockClear();
+    uploadAsync.mockReset();
+    uploadAsync.mockResolvedValue({ status: 200, headers: {}, body: "" });
     cancelAsync.mockClear();
+    createUploadTask.mockClear();
   });
 
   afterEach(() => {
@@ -102,7 +110,7 @@ describe("clipApi", () => {
     expect(res.ok).toBe(false);
   });
 
-  it("uploadClipToSession uses native binary upload and completes the job", async () => {
+  it("persists recovery before native upload and completes the job", async () => {
     fetchMock
       .mockResolvedValueOnce(
         new Response(
@@ -118,7 +126,15 @@ describe("clipApi", () => {
       )
       .mockResolvedValueOnce(new Response("{}", { status: 200 }));
 
+    const lifecycle: string[] = [];
+    uploadAsync.mockImplementationOnce(async () => {
+      lifecycle.push("upload");
+      return { status: 200, headers: {}, body: "" };
+    });
     const progress = vi.fn();
+    const onInitiated = vi.fn(async () => {
+      lifecycle.push("initiated");
+    });
     const res = await uploadClipToSession({
       sessionId: "sess-1",
       fileUri: "file:///clip.mp4",
@@ -127,17 +143,57 @@ describe("clipApi", () => {
       widthPx: 1280,
       heightPx: 720,
       sizeBytes: 5000,
+      onInitiated,
       onProgress: progress,
     });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data).toBe("clip-9");
+    expect(onInitiated).toHaveBeenCalledOnce();
+    expect(lifecycle).toEqual(["initiated", "upload"]);
     expect(uploadAsync).toHaveBeenCalledOnce();
     expect(progress).toHaveBeenCalledWith(0.5);
     expect(progress).toHaveBeenLastCalledWith(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1][0]).toContain("/complete-upload");
+  });
+
+  it("does not upload bytes when recovery persistence fails", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          clip_id: "clip-10",
+          upload_url: "https://s3.example.com/put",
+          upload_method: "PUT",
+          upload_expires_at: "2099-07-11T12:00:00Z",
+          storage_key: "key-10",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const res = await uploadClipToSession({
+      sessionId: "sess-1",
+      fileUri: "file:///clip.mp4",
+      mimeType: "video/mp4",
+      durationSeconds: 5,
+      widthPx: 1280,
+      heightPx: 720,
+      sizeBytes: 5000,
+      onInitiated: async () => {
+        throw new Error("recovery write failed");
+      },
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.kind).toBe("client");
+      expect(res.error.message).toContain("recovery write failed");
+    }
+    expect(createUploadTask).not.toHaveBeenCalled();
+    expect(uploadAsync).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("rejects oversized or overlong clips before network work", async () => {
