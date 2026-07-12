@@ -26,6 +26,8 @@ export interface UploadClipParams {
   heightPx: number;
   sizeBytes: number;
   clientHintTrickId?: string | null;
+  /** Persist recovery metadata before any video bytes are uploaded. */
+  onInitiated?: (upload: InitiateClipUploadResponse) => Promise<void>;
   onProgress?: (fraction: number) => void;
 }
 
@@ -176,7 +178,7 @@ export async function completeSessionClipUpload(clipId: string): Promise<ApiResu
   return { ok: true, data: undefined, status: res.status };
 }
 
-/** Initiate → native binary upload → complete-upload. Returns the analysis job id. */
+/** Initiate → persist recovery → native binary upload → complete-upload. */
 export async function uploadClipToSession(params: UploadClipParams): Promise<ApiResult<string>> {
   if (params.durationSeconds <= 0 || params.durationSeconds > MAX_CLIP_DURATION_SECONDS) {
     return {
@@ -217,6 +219,23 @@ export async function uploadClipToSession(params: UploadClipParams): Promise<Api
       ok: false,
       error: { kind: "client", message: "Upload authorization expired. Please try again." },
     };
+  }
+
+  if (params.onInitiated) {
+    try {
+      await params.onInitiated(initiated.data);
+    } catch (error) {
+      return {
+        ok: false,
+        error: {
+          kind: "client",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not save analysis recovery data before upload.",
+        },
+      };
+    }
   }
 
   const uploaded = await uploadClipToPresignedUrl(
