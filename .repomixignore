@@ -1,0 +1,40 @@
+# Repomix-specific ignores — secrets and credentials must never be packed for AI.
+# .gitignore is also respected (see repomix.config.json).
+
+# Environment & local config (real values live in .env — gitignored)
+.env
+.env.*
+!.env.example
+
+# Keys, certs, provisioning
+*.pem
+*.key
+*.p8
+*.p12
+*.jks
+*.mobileprovision
+
+# Mobile service configs (often contain API keys)
+google-services.json
+GoogleService-Info.plist
+
+# Build / export artifacts
+dist/
+dist-ios/
+.expo/
+.expo-export-tmp/
+web-build/
+eas-build-log*.txt
+*.ipa
+*.aab
+*.apk
+
+# Dependencies & generated output
+node_modules/
+package-lock.json
+repomix-output.xml
+repomix-output.md
+
+# Native trees (generated locally; may embed signing config)
+ios/
+android/

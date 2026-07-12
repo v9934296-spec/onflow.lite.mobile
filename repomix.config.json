@@ -1,0 +1,54 @@
+{
+  "$schema": "https://repomix.com/schemas/config.json",
+  "output": {
+    "filePath": "repomix-output.xml",
+    "style": "xml",
+    "showLineNumbers": true
+  },
+  "include": [
+    "app/**",
+    "src/**",
+    "docs/**",
+    ".github/**",
+    "*.md",
+    "*.json",
+    "vitest.config.ts",
+    "tsconfig.json"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "useDotIgnore": true,
+    "customPatterns": [
+      "**/.env",
+      "**/.env.*",
+      "**/.env.local",
+      "**/.env.production",
+      "**/.env.preview",
+      "**/.env.development",
+      "**/*.pem",
+      "**/*.key",
+      "**/*.p8",
+      "**/*.p12",
+      "**/*.jks",
+      "**/*.mobileprovision",
+      "**/google-services.json",
+      "**/GoogleService-Info.plist",
+      "**/secrets/**",
+      "**/credentials/**",
+      "eas-build-log*.txt",
+      "repomix-output.xml",
+      "repomix-output.md",
+      "dist/**",
+      "dist-ios/**",
+      ".expo/**",
+      "node_modules/**",
+      "package-lock.json",
+      "ios/**",
+      "android/**"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  }
+}

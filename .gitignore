@@ -69,3 +69,7 @@ android/
 .vscode/
 *.swp
 *.swo
+
+# Repomix AI bundle (regenerate locally; never commit — may echo env if misconfigured)
+repomix-output.xml
+repomix-output.md
