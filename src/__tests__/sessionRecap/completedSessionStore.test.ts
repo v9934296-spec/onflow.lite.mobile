@@ -27,9 +27,11 @@ import {
 } from "../../sessionRecap/completedSessionStore";
 import type { SkateSession } from "../../types/api/session";
 
+const USER_A = "user-1";
+const USER_B = "user-2";
 const SESSION: SkateSession = {
   id: "sess-load",
-  user_id: "user-1",
+  user_id: USER_A,
   spot_label: null,
   focus_trick: null,
   notes: null,
@@ -44,14 +46,14 @@ const SESSION: SkateSession = {
 };
 
 describe("completedSessionStore", () => {
-  it("saves and loads a recap by session id", async () => {
+  it("saves and loads a recap by user and session id", async () => {
     const recap = buildSessionRecap(SESSION, [], SESSION.ended_at!);
-    const save = await saveCompletedSessionRecap(recap);
-    expect(save.ok).toBe(true);
+    expect((await saveCompletedSessionRecap(USER_A, recap)).ok).toBe(true);
 
-    const loaded = await loadCompletedSessionRecap("sess-load");
+    const loaded = await loadCompletedSessionRecap(USER_A, "sess-load");
     expect(loaded.data?.session_id).toBe("sess-load");
     expect(loaded.data?.attempts_count).toBe(0);
+    expect((await loadCompletedSessionRecap(USER_B, "sess-load")).data).toBeNull();
   });
 
   it("lists recaps newest ended first", async () => {
@@ -65,10 +67,11 @@ describe("completedSessionStore", () => {
       [],
       "2026-07-12T12:00:00.000Z",
     );
-    await saveCompletedSessionRecap(older);
-    await saveCompletedSessionRecap(newer);
+    await saveCompletedSessionRecap(USER_A, older);
+    await saveCompletedSessionRecap(USER_A, newer);
 
-    const listed = await listCompletedSessionRecaps();
+    const listed = await listCompletedSessionRecaps(USER_A);
     expect(listed.data[0]?.session_id).toBe("sess-new");
+    expect((await listCompletedSessionRecaps(USER_B)).data).toEqual([]);
   });
 });
