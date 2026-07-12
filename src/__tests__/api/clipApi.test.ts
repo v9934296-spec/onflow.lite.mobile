@@ -1,18 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const uploadAsync = vi.fn(async () => ({ status: 200, headers: {}, body: "" }));
-const cancelAsync = vi.fn(async () => undefined);
-const createUploadTask = vi.fn(
-  (
-    _url: string,
-    _fileUri: string,
-    _options: unknown,
-    callback?: (data: { totalBytesSent: number; totalBytesExpectedToSend: number }) => void,
-  ) => {
-    callback?.({ totalBytesSent: 5, totalBytesExpectedToSend: 10 });
-    return { uploadAsync, cancelAsync };
-  },
-);
+const fileSystemMocks = vi.hoisted(() => ({
+  uploadAsync: vi.fn(),
+  cancelAsync: vi.fn(),
+  createUploadTask: vi.fn(),
+}));
 
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
@@ -28,7 +20,7 @@ vi.mock("expo-constants", () => ({
 vi.mock("expo-file-system", () => ({
   FileSystemUploadType: { BINARY_CONTENT: 0 },
   FileSystemSessionType: { FOREGROUND: 1 },
-  createUploadTask,
+  createUploadTask: fileSystemMocks.createUploadTask,
 }));
 
 import { resetAuthHooks, setAuthTokenProvider } from "../../api/auth";
@@ -47,10 +39,26 @@ describe("clipApi", () => {
     global.fetch = fetchMock;
     resetAuthHooks();
     setAuthTokenProvider(async () => "test-token");
-    uploadAsync.mockReset();
-    uploadAsync.mockResolvedValue({ status: 200, headers: {}, body: "" });
-    cancelAsync.mockClear();
-    createUploadTask.mockClear();
+
+    fileSystemMocks.uploadAsync.mockReset();
+    fileSystemMocks.uploadAsync.mockResolvedValue({ status: 200, headers: {}, body: "" });
+    fileSystemMocks.cancelAsync.mockReset();
+    fileSystemMocks.cancelAsync.mockResolvedValue(undefined);
+    fileSystemMocks.createUploadTask.mockReset();
+    fileSystemMocks.createUploadTask.mockImplementation(
+      (
+        _url: string,
+        _fileUri: string,
+        _options: unknown,
+        callback?: (data: { totalBytesSent: number; totalBytesExpectedToSend: number }) => void,
+      ) => {
+        callback?.({ totalBytesSent: 5, totalBytesExpectedToSend: 10 });
+        return {
+          uploadAsync: fileSystemMocks.uploadAsync,
+          cancelAsync: fileSystemMocks.cancelAsync,
+        };
+      },
+    );
   });
 
   afterEach(() => {
@@ -127,7 +135,7 @@ describe("clipApi", () => {
       .mockResolvedValueOnce(new Response("{}", { status: 200 }));
 
     const lifecycle: string[] = [];
-    uploadAsync.mockImplementationOnce(async () => {
+    fileSystemMocks.uploadAsync.mockImplementationOnce(async () => {
       lifecycle.push("upload");
       return { status: 200, headers: {}, body: "" };
     });
@@ -152,7 +160,7 @@ describe("clipApi", () => {
     expect(res.data).toBe("clip-9");
     expect(onInitiated).toHaveBeenCalledOnce();
     expect(lifecycle).toEqual(["initiated", "upload"]);
-    expect(uploadAsync).toHaveBeenCalledOnce();
+    expect(fileSystemMocks.uploadAsync).toHaveBeenCalledOnce();
     expect(progress).toHaveBeenCalledWith(0.5);
     expect(progress).toHaveBeenLastCalledWith(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -191,8 +199,8 @@ describe("clipApi", () => {
       expect(res.error.kind).toBe("client");
       expect(res.error.message).toContain("recovery write failed");
     }
-    expect(createUploadTask).not.toHaveBeenCalled();
-    expect(uploadAsync).not.toHaveBeenCalled();
+    expect(fileSystemMocks.createUploadTask).not.toHaveBeenCalled();
+    expect(fileSystemMocks.uploadAsync).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
