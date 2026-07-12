@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const uploadAsync = vi.fn(async () => ({ status: 200, headers: {}, body: "" }));
+const cancelAsync = vi.fn(async () => undefined);
+
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
 }));
@@ -11,12 +14,23 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
+vi.mock("expo-file-system", () => ({
+  FileSystemUploadType: { BINARY_CONTENT: 0 },
+  FileSystemSessionType: { FOREGROUND: 1 },
+  createUploadTask: vi.fn(
+    (_url: string, _fileUri: string, _options: unknown, callback?: (data: { totalBytesSent: number; totalBytesExpectedToSend: number }) => void) => {
+      callback?.({ totalBytesSent: 5, totalBytesExpectedToSend: 10 });
+      return { uploadAsync, cancelAsync };
+    },
+  ),
+}));
+
+import { resetAuthHooks, setAuthTokenProvider } from "../../api/auth";
 import {
   completeSessionClipUpload,
   initiateSessionClipUpload,
   uploadClipToSession,
 } from "../../api/clipApi";
-import { resetAuthHooks, setAuthTokenProvider } from "../../api/auth";
 
 describe("clipApi", () => {
   const originalUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -27,6 +41,8 @@ describe("clipApi", () => {
     global.fetch = fetchMock;
     resetAuthHooks();
     setAuthTokenProvider(async () => "test-token");
+    uploadAsync.mockClear();
+    cancelAsync.mockClear();
   });
 
   afterEach(() => {
@@ -39,14 +55,15 @@ describe("clipApi", () => {
     resetAuthHooks();
   });
 
-  it("POSTs initiate-upload with session and clip metadata", async () => {
+  it("POSTs initiate-upload with required upload metadata", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
           clip_id: "clip-1",
           upload_url: "https://s3.example.com/put",
+          upload_method: "PUT",
           storage_key: "key-1",
-          upload_expires_at: "2026-07-11T12:00:00Z",
+          upload_expires_at: "2099-07-11T12:00:00Z",
         }),
         { status: 200 },
       ),
@@ -65,28 +82,43 @@ describe("clipApi", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data.clip_id).toBe("clip-1");
-    expect(fetchMock.mock.calls[0][0]).toContain("/api/v1/clips/initiate-upload");
+    expect(res.data.upload_method).toBe("PUT");
   });
 
-  it("uploadClipToSession runs initiate, PUT, and complete-upload", async () => {
-    const blob = new Blob(["video"]);
+  it("rejects initiate responses that omit upload method or expiry", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ clip_id: "clip-1", upload_url: "https://s3", storage_key: "key" }), {
+        status: 200,
+      }),
+    );
+    const res = await initiateSessionClipUpload({
+      sessionId: "sess-1",
+      durationSeconds: 4,
+      widthPx: 1920,
+      heightPx: 1080,
+      contentType: "video/mp4",
+      sizeBytes: 12345,
+    });
+    expect(res.ok).toBe(false);
+  });
+
+  it("uploadClipToSession uses native binary upload and completes the job", async () => {
     fetchMock
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
             clip_id: "clip-9",
             upload_url: "https://s3.example.com/put",
+            upload_method: "PUT",
+            upload_expires_at: "2099-07-11T12:00:00Z",
             storage_key: "key-9",
           }),
           { status: 200 },
         ),
       )
-      .mockResolvedValueOnce({
-        blob: async () => blob,
-      } as Response)
-      .mockResolvedValueOnce(new Response(null, { status: 200 }))
       .mockResolvedValueOnce(new Response("{}", { status: 200 }));
 
+    const progress = vi.fn();
     const res = await uploadClipToSession({
       sessionId: "sess-1",
       fileUri: "file:///clip.mp4",
@@ -95,13 +127,31 @@ describe("clipApi", () => {
       widthPx: 1280,
       heightPx: 720,
       sizeBytes: 5000,
+      onProgress: progress,
     });
 
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.data).toBe("clip-9");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[3][0]).toContain("/complete-upload");
+    expect(uploadAsync).toHaveBeenCalledOnce();
+    expect(progress).toHaveBeenCalledWith(0.5);
+    expect(progress).toHaveBeenLastCalledWith(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toContain("/complete-upload");
+  });
+
+  it("rejects oversized or overlong clips before network work", async () => {
+    const res = await uploadClipToSession({
+      sessionId: "sess-1",
+      fileUri: "file:///clip.mp4",
+      mimeType: "video/mp4",
+      durationSeconds: 16,
+      widthPx: 1280,
+      heightPx: 720,
+      sizeBytes: 5000,
+    });
+    expect(res.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("treats complete-upload 409 as success", async () => {
