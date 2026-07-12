@@ -1,18 +1,21 @@
 import React, { useState } from "react";
-import { View, Text, Pressable, StyleSheet, Alert, Linking } from "react-native";
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
+
+import { savePendingAnalysisJob } from "../src/analysis/pendingAnalysisStore";
 import { track } from "../src/analytics";
 import { uploadClipToSession } from "../src/api/clipApi";
+import { useAccount } from "../src/auth/accountContext";
 import { isQuotaExceededMessage, PAYWALL_ROUTE } from "../src/billing/quota";
-import { C, F } from "../src/theme";
-import { Btn, Eyebrow } from "../src/ui";
 import { SAMPLE_CLIPS, analyzeSample, analyzeUserClip } from "../src/engine";
 import { getFlowRedirect } from "../src/flow";
-import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSession } from "../src/session";
+import { useSkateSession } from "../src/skateSession/skateSessionContext";
+import { C, F } from "../src/theme";
+import { Btn, Eyebrow } from "../src/ui";
 
 function resolveMimeType(asset: ImagePicker.ImagePickerAsset): string {
   if (asset.mimeType === "video/quicktime") return "video/quicktime";
@@ -28,6 +31,7 @@ class QuotaExceededError extends Error {
 
 export default function Capture() {
   const router = useRouter();
+  const { user } = useAccount();
   const { trick, analysis, selectedTrick, setAnalysis, setPendingClipJobId } = useSession();
   const { activeSession, hasActiveSession } = useSkateSession();
   const insets = useSafeAreaInsets();
@@ -38,7 +42,7 @@ export default function Capture() {
   if (redirect) return <Redirect href={redirect} />;
 
   const calledTrick = trick!;
-  const canUploadToSession = hasActiveSession && Boolean(activeSession?.id);
+  const canUploadToSession = hasActiveSession && Boolean(activeSession?.id) && Boolean(user?.user_id);
 
   const showPermissionAlert = (canAskAgain: boolean) => {
     Alert.alert(
@@ -56,29 +60,35 @@ export default function Capture() {
   };
 
   const uploadUserClip = async (asset: ImagePicker.ImagePickerAsset, called: string) => {
-    if (!activeSession?.id) {
-      throw new Error("No active session to upload into.");
+    if (!activeSession?.id || !user?.user_id) {
+      throw new Error("No signed-in active session is available for this upload.");
     }
 
-    const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+    const fileInfo = await FileSystem.getInfoAsync(asset.uri, { size: true });
     if (!fileInfo.exists || typeof fileInfo.size !== "number" || fileInfo.size <= 0) {
       throw new Error("Could not read the video file size.");
     }
+    if (typeof asset.duration !== "number" || asset.duration <= 0) {
+      throw new Error("Could not read the video duration. Choose a different clip.");
+    }
+    if (typeof asset.width !== "number" || asset.width <= 0 || typeof asset.height !== "number" || asset.height <= 0) {
+      throw new Error("Could not read the video dimensions. Choose a different clip.");
+    }
 
-    const durationSec = typeof asset.duration === "number" ? asset.duration / 1000 : 2;
-    const widthPx = typeof asset.width === "number" && asset.width > 0 ? asset.width : 1920;
-    const heightPx = typeof asset.height === "number" && asset.height > 0 ? asset.height : 1080;
-
-    setStatusLabel("Uploading clip…");
+    const durationSec = asset.duration / 1000;
+    setStatusLabel("Preparing upload…");
     const uploaded = await uploadClipToSession({
       sessionId: activeSession.id,
       fileUri: asset.uri,
       mimeType: resolveMimeType(asset),
       durationSeconds: durationSec,
-      widthPx,
-      heightPx,
+      widthPx: asset.width,
+      heightPx: asset.height,
       sizeBytes: fileInfo.size,
       clientHintTrickId: selectedTrick?.trickId ?? null,
+      onProgress: (fraction) => {
+        setStatusLabel(`Uploading clip… ${Math.round(fraction * 100)}%`);
+      },
     });
 
     if (!uploaded.ok) {
@@ -88,9 +98,24 @@ export default function Capture() {
       throw new Error(uploaded.error.message);
     }
 
+    const pendingResult = await savePendingAnalysisJob(user.user_id, {
+      jobId: uploaded.data,
+      sessionId: activeSession.id,
+      trickName: called,
+      selectedTrick,
+      submittedAt: new Date().toISOString(),
+    });
+
     setAnalysis(null);
     setPendingClipJobId(uploaded.data);
     track("capture_completed", { source: "user_upload", trick: called, job_id: uploaded.data });
+
+    if (!pendingResult.ok) {
+      Alert.alert(
+        "Analysis started",
+        "The clip uploaded, but this device could not save recovery data. Keep the app open until analysis finishes.",
+      );
+    }
     router.push("/analyzing");
   };
 
