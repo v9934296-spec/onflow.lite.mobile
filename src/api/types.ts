@@ -1,5 +1,6 @@
 export type ApiErrorKind =
   | "configuration"
+  | "storage"
   | "network"
   | "timeout"
   | "unauthorized"
