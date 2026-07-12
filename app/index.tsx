@@ -1,20 +1,21 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Text, View, StyleSheet } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { track } from "../src/analytics";
 import { useAccount } from "../src/auth/accountContext";
 import { useAuth } from "../src/auth/authContext";
 import { getBestTrickStreak, getLast7Days } from "../src/progress";
+import { useSession } from "../src/session";
+import { useSessionAttempts } from "../src/sessionAttempts/useSessionAttempts";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow, WeekRow } from "../src/ui";
-import { useSession } from "../src/session";
-import { useSessionAttempts } from "../src/sessionAttempts/useSessionAttempts";
 
 export default function Home() {
   const router = useRouter();
-  const { log, attempts, resetLoop, selectedTrick } = useSession();
+  const { log, attempts, resetLoop, selectedTrick, pendingClipJobId } = useSession();
   const { user } = useAccount();
   const { signOut } = useAuth();
   const {
@@ -43,7 +44,9 @@ export default function Home() {
   const week = getLast7Days(attempts);
   const bestStreak = getBestTrickStreak(attempts);
 
+  const analysisPending = Boolean(pendingClipJobId);
   const sessionBusy = isCreating || entering || loggingAttempt || isEnding;
+  const sessionActionDisabled = sessionBusy || analysisPending;
   const sessionLoading = hydrateState === "loading";
 
   useEffect(() => {
@@ -51,6 +54,10 @@ export default function Home() {
   }, []);
 
   async function enterSession(createIfNeeded: boolean) {
+    if (analysisPending) {
+      router.push("/analyzing");
+      return;
+    }
     if (sessionBusy || sessionLoading) return;
     setEntering(true);
     try {
@@ -68,7 +75,7 @@ export default function Home() {
   }
 
   async function handleEndSession() {
-    if (sessionBusy || !hasActiveSession) return;
+    if (sessionActionDisabled || !hasActiveSession) return;
 
     const finish = async () => {
       const result = await endSession();
@@ -97,6 +104,19 @@ export default function Home() {
     await finish();
   }
 
+  async function handleSignOut() {
+    try {
+      await signOut();
+    } catch (error) {
+      Alert.alert(
+        "Couldn't sign out securely",
+        error instanceof Error
+          ? error.message
+          : "The secure credential could not be removed. Restart the app and try again.",
+      );
+    }
+  }
+
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
       <View style={s.hero}>
@@ -120,18 +140,24 @@ export default function Home() {
         ) : null}
       </View>
 
+      {analysisPending ? (
+        <Card accent={C.amber}>
+          <Eyebrow color={C.amber}>ANALYSIS IN PROGRESS</Eyebrow>
+          <Text style={s.sessionMeta}>
+            Your job was saved on this device. You can safely resume checking its status.
+          </Text>
+          <Btn label="Resume analysis" onPress={() => router.push("/analyzing")} />
+        </Card>
+      ) : null}
+
       {hasActiveSession && activeSession ? (
         <Card accent={C.volt}>
           <Eyebrow color={C.volt}>ACTIVE SESSION</Eyebrow>
-          {activeSession.spot_label ? (
-            <Text style={s.sessionMeta}>{activeSession.spot_label}</Text>
-          ) : null}
+          {activeSession.spot_label ? <Text style={s.sessionMeta}>{activeSession.spot_label}</Text> : null}
           {activeSession.focus_trick ? (
             <Text style={s.sessionMeta}>Focus: {activeSession.focus_trick}</Text>
           ) : null}
-          {selectedTrick ? (
-            <Text style={s.sessionTrick}>{selectedTrick.canonicalName}</Text>
-          ) : null}
+          {selectedTrick ? <Text style={s.sessionTrick}>{selectedTrick.canonicalName}</Text> : null}
           {sessionCounts.total > 0 ? (
             <Text style={s.sessionMeta}>
               {sessionCounts.landed} landed · {sessionCounts.missed} missed · {sessionCounts.total} logged
@@ -149,7 +175,9 @@ export default function Home() {
           {bestStreak ? (
             <Text style={s.streak}>
               {bestStreak.trick} streak:{" "}
-              <Text style={{ color: C.volt, fontFamily: F.bold }}>{bestStreak.streak} day{bestStreak.streak === 1 ? "" : "s"}</Text>
+              <Text style={{ color: C.volt, fontFamily: F.bold }}>
+                {bestStreak.streak} day{bestStreak.streak === 1 ? "" : "s"}
+              </Text>
             </Text>
           ) : null}
         </Card>
@@ -191,7 +219,7 @@ export default function Home() {
             <Btn
               label={sessionBusy ? "Opening session…" : selectedTrick ? "Change trick" : "Continue session"}
               onPress={() => void (selectedTrick ? router.push("/trick") : enterSession(false))}
-              disabled={sessionBusy}
+              disabled={sessionActionDisabled}
             />
             {selectedTrick ? (
               <>
@@ -199,19 +227,19 @@ export default function Home() {
                 <Btn
                   label="Film clip"
                   onPress={() => router.push("/capture")}
-                  disabled={sessionBusy}
+                  disabled={sessionActionDisabled}
                 />
                 <View style={s.outcomeRow}>
                   <Btn
                     label={loggingAttempt ? "Saving…" : "Land"}
                     onPress={() => void logAttempt(selectedTrick, "landed")}
-                    disabled={sessionBusy}
+                    disabled={sessionActionDisabled}
                   />
                   <Btn
                     label={loggingAttempt ? "Saving…" : "Miss"}
                     variant="ghost"
                     onPress={() => void logAttempt(selectedTrick, "missed")}
-                    disabled={sessionBusy}
+                    disabled={sessionActionDisabled}
                   />
                 </View>
               </>
@@ -220,21 +248,17 @@ export default function Home() {
               label={isEnding ? "Ending session…" : "End session"}
               variant="red"
               onPress={() => void handleEndSession()}
-              disabled={sessionBusy}
+              disabled={sessionActionDisabled}
             />
           </>
         ) : (
           <Btn
             label={sessionBusy ? "Starting session…" : "Start session"}
             onPress={() => void enterSession(true)}
-            disabled={sessionBusy}
+            disabled={sessionActionDisabled}
           />
         )}
-        <Btn
-          label={`Session history`}
-          variant="ghost"
-          onPress={() => router.push("/history")}
-        />
+        <Btn label="Session history" variant="ghost" onPress={() => router.push("/history")} />
         <Btn label="Feed" variant="ghost" onPress={() => router.push("/feed")} />
         <Btn label="Settings" variant="ghost" onPress={() => router.push("/settings")} />
         <Btn
@@ -245,7 +269,7 @@ export default function Home() {
             router.push("/log");
           }}
         />
-        <Btn label="Sign out" variant="ghost" onPress={() => void signOut()} />
+        <Btn label="Sign out" variant="ghost" onPress={() => void handleSignOut()} />
       </View>
     </View>
   );
