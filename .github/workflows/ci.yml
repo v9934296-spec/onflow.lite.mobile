@@ -40,7 +40,7 @@ jobs:
 
       - name: iOS bundle check
         id: bundle
-        if: always() && steps.typecheck.outcome == 'success' && steps.tests.outcome == 'success'
+        if: always()
         continue-on-error: true
         run: |
           set -o pipefail
