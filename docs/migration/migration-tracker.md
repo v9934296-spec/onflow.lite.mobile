@@ -46,8 +46,8 @@ Use for every migrated feature:
 | 2 | Authentication and user state | Complete | Pending manual | Yes (74) | `c76b24a` |
 | 3 | Session creation | Complete | Pending manual | Yes (89) | `d57b2cf` |
 | 4 | Trick catalog and picker | Complete | Pending manual | Yes (100) | `12c6596` |
-| 5 | Attempt logging | Complete | Pending manual | Yes (111) | `TBD` |
-| 6 | End-session recap | Complete | Pending manual | Yes (111) | `TBD` |
+| 5 | Attempt logging | Complete | Pending manual | Yes (111) | `eaa71e8` |
+| 6 | End-session recap | Complete | Pending manual | Yes (111) | `30579af` |
 | 7 | Session history | Not started | No | No | — |
 | 8 | Clip selection and upload | Blocked by Milestone 1 | No | No | — |
 | 9 | Analysis job status | Blocked by upload | No | No | — |
