@@ -1,5 +1,5 @@
-import type { ApiResult } from "./types";
 import { apiRequest } from "./client";
+import type { ApiResult } from "./types";
 import type {
   CreateSkateSessionRequest,
   SkateSession,
@@ -11,45 +11,60 @@ function normalizeOptional(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function requiredString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function requiredTimestamp(value: unknown): string | null {
+  const text = requiredString(value);
+  return text && Number.isFinite(Date.parse(text)) ? text : null;
+}
+
+function optionalTimestamp(value: unknown): string | null {
+  if (value == null) return null;
+  return requiredTimestamp(value);
+}
+
+function requiredCount(primary: unknown, cached: unknown): number | null {
+  const value = typeof primary === "number" ? primary : typeof cached === "number" ? cached : null;
+  return value != null && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
 export function parseSkateSession(raw: unknown): SkateSession | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  const id = typeof o.id === "string" ? o.id : null;
-  const userId = typeof o.user_id === "string" ? o.user_id : null;
-  if (!id || !userId) return null;
+  const id = requiredString(o.id);
+  const userId = requiredString(o.user_id);
+  const startedAt = requiredTimestamp(o.started_at);
+  const createdAt = requiredTimestamp(o.created_at);
+  const updatedAt = requiredTimestamp(o.updated_at);
+  const clipCount = requiredCount(o.clip_count, o.clip_count_cached);
+  const attemptCount = requiredCount(o.attempt_count, o.attempt_count_cached);
 
-  const clipCount =
-    typeof o.clip_count === "number"
-      ? o.clip_count
-      : typeof o.clip_count_cached === "number"
-        ? o.clip_count_cached
-        : 0;
-  const attemptCount =
-    typeof o.attempt_count === "number"
-      ? o.attempt_count
-      : typeof o.attempt_count_cached === "number"
-        ? o.attempt_count_cached
-        : clipCount;
+  if (!id || !userId || !startedAt || !createdAt || !updatedAt || clipCount == null || attemptCount == null) {
+    return null;
+  }
+
+  const endedAt = optionalTimestamp(o.ended_at);
+  if (o.ended_at != null && !endedAt) return null;
+  const deletedAt = optionalTimestamp(o.deleted_at);
+  if (o.deleted_at != null && !deletedAt) return null;
 
   return {
     id,
     user_id: userId,
-    spot_label: typeof o.spot_label === "string" ? o.spot_label : null,
-    focus_trick: typeof o.focus_trick === "string" ? o.focus_trick : null,
-    notes: typeof o.notes === "string" ? o.notes : null,
-    started_at: typeof o.started_at === "string" ? o.started_at : new Date().toISOString(),
-    ended_at: typeof o.ended_at === "string" ? o.ended_at : null,
-    breakthrough_note: typeof o.breakthrough_note === "string" ? o.breakthrough_note : null,
+    spot_label: typeof o.spot_label === "string" ? normalizeOptional(o.spot_label) : null,
+    focus_trick: typeof o.focus_trick === "string" ? normalizeOptional(o.focus_trick) : null,
+    notes: typeof o.notes === "string" ? normalizeOptional(o.notes) : null,
+    started_at: startedAt,
+    ended_at: endedAt,
+    breakthrough_note:
+      typeof o.breakthrough_note === "string" ? normalizeOptional(o.breakthrough_note) : null,
     clip_count: clipCount,
     attempt_count: attemptCount,
-    created_at: typeof o.created_at === "string" ? o.created_at : new Date().toISOString(),
-    updated_at:
-      typeof o.updated_at === "string"
-        ? o.updated_at
-        : typeof o.created_at === "string"
-          ? o.created_at
-          : new Date().toISOString(),
-    deleted_at: typeof o.deleted_at === "string" ? o.deleted_at : null,
+    created_at: createdAt,
+    updated_at: updatedAt,
+    deleted_at: deletedAt,
   };
 }
 
