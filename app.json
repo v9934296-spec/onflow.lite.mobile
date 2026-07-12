@@ -15,7 +15,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "OnFlow Lite uses the camera to film skate clips for analysis.",
         "NSMicrophoneUsageDescription": "OnFlow Lite records audio with your skate clips.",
-        "NSPhotoLibraryUsageDescription": "OnFlow Lite lets you pick skate clips from your library."
+        "NSPhotoLibraryUsageDescription": "OnFlow Lite lets you pick skate clips from your library.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -27,7 +28,8 @@
       ]
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
