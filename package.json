@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bundle:ios": "expo export --platform ios --output-dir dist-ios",
     "build:preview": "eas build --profile preview --platform all",
     "build:preview:ios": "eas build --profile preview --platform ios",
     "build:production": "eas build --profile production --platform all",
