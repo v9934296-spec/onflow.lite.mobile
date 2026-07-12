@@ -18,9 +18,10 @@ import {
   clearPendingSessionCompletion,
   loadPendingSessionCompletion,
   savePendingSessionCompletion,
+  type PendingSessionCompletion,
 } from "../../skateSession/sessionCompletionStore";
 
-const PENDING = {
+const PENDING: PendingSessionCompletion = {
   sessionId: "session-1",
   endedAt: "2026-07-11T12:10:00.000Z",
   recap: {
@@ -35,7 +36,7 @@ const PENDING = {
     missed_count: 1,
     landed_rate: 0.5,
     trick_breakdown: [
-      { canonicalName: "Kickflip", attempts: 2, landed: 1, missed: 1 },
+      { canonicalName: "Kickflip", total: 2, landed: 1, missed: 1 },
     ],
   },
 };
