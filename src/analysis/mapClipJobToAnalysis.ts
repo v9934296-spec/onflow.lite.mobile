@@ -9,7 +9,7 @@ function trickLabelsMatch(called: string, onFilm: string): boolean {
 
 function normalizedReadiness(readiness: string): "detected" | "limited" | "insufficient" {
   const value = readiness.trim().toLowerCase();
-  if (["sufficient", "ready", "detected", "complete"].includes(value)) return "detected";
+  if (["sufficient", "usable", "ready", "detected", "complete"].includes(value)) return "detected";
   if (value === "limited") return "limited";
   return "insufficient";
 }
