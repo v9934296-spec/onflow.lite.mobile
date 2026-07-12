@@ -42,7 +42,7 @@ Use for every migrated feature:
 | Order | Feature | Status | Device Tested | Tests Passing | Commit |
 | ----- | ----------------------------- | ---------------------: | ------------: | ------------: | ------ |
 | 0 | Migration baseline | Complete | No | Yes | `b9c4eaa` |
-| 1 | API client and environment | Complete | Pending manual | Yes (66) | — |
+| 1 | API client and environment | Complete | Pending manual | Yes (66) | `f6bc3a4` |
 | 2 | Authentication and user state | Not started | No | No | — |
 | 3 | Session creation | Not started | No | No | — |
 | 4 | Trick catalog and picker | Not started | No | No | — |
