@@ -1,11 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LoadResult, LoggedClip, StorageResult } from "./types";
+import { userScopedStorageKey } from "./storage/userScopedStorage";
 
-const KEY = "onflow_lite_log_v1";
+function keyFor(userId: string): string {
+  return userScopedStorageKey(userId, "clipLog");
+}
 
-export async function loadLog(): Promise<LoadResult<LoggedClip[]>> {
+export async function loadLog(userId: string): Promise<LoadResult<LoggedClip[]>> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(keyFor(userId));
     if (!raw) return { data: [] };
 
     const parsed: unknown = JSON.parse(raw);
@@ -22,25 +25,25 @@ export async function loadLog(): Promise<LoadResult<LoggedClip[]>> {
   }
 }
 
-export async function saveLog(log: LoggedClip[]): Promise<StorageResult> {
+export async function saveLog(userId: string, log: LoggedClip[]): Promise<StorageResult> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(log));
+    await AsyncStorage.setItem(keyFor(userId), JSON.stringify(log));
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Failed to save log" };
   }
 }
 
-export async function clearLog(): Promise<StorageResult> {
+export async function clearLog(userId: string): Promise<StorageResult> {
   try {
-    await AsyncStorage.removeItem(KEY);
+    await AsyncStorage.removeItem(keyFor(userId));
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Failed to clear log" };
   }
 }
 
-export async function deleteLogEntry(id: string): Promise<StorageResult> {
-  const { data } = await loadLog();
-  return saveLog(data.filter((entry) => entry.id !== id));
+export async function deleteLogEntry(userId: string, id: string): Promise<StorageResult> {
+  const { data } = await loadLog(userId);
+  return saveLog(userId, data.filter((entry) => entry.id !== id));
 }
