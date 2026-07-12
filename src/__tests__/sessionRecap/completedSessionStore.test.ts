@@ -1,23 +1,21 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@react-native-async-storage/async-storage", () => {
-  const store = new Map<string, string>();
-  return {
-    default: {
-      getItem: vi.fn(async (key: string) => store.get(key) ?? null),
-      setItem: vi.fn(async (key: string, value: string) => {
-        store.set(key, value);
-      }),
-      removeItem: vi.fn(async (key: string) => {
-        store.delete(key);
-      }),
-      clear: vi.fn(async () => {
-        store.clear();
-      }),
-    },
-    __store: store,
-  };
-});
+const store = new Map<string, string>();
+
+vi.mock("@react-native-async-storage/async-storage", () => ({
+  default: {
+    getItem: vi.fn(async (key: string) => store.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: string) => {
+      store.set(key, value);
+    }),
+    removeItem: vi.fn(async (key: string) => {
+      store.delete(key);
+    }),
+    clear: vi.fn(async () => {
+      store.clear();
+    }),
+  },
+}));
 
 import { buildSessionRecap } from "../../sessionRecap/buildSessionRecap";
 import {
@@ -46,6 +44,8 @@ const SESSION: SkateSession = {
 };
 
 describe("completedSessionStore", () => {
+  beforeEach(() => store.clear());
+
   it("saves and loads a recap by user and session id", async () => {
     const recap = buildSessionRecap(SESSION, [], SESSION.ended_at!);
     expect((await saveCompletedSessionRecap(USER_A, recap)).ok).toBe(true);
@@ -73,5 +73,36 @@ describe("completedSessionStore", () => {
     const listed = await listCompletedSessionRecaps(USER_A);
     expect(listed.data[0]?.session_id).toBe("sess-new");
     expect((await listCompletedSessionRecaps(USER_B)).data).toEqual([]);
+  });
+
+  it("refuses to save inconsistent recap totals", async () => {
+    const recap = buildSessionRecap(SESSION, [], SESSION.ended_at!);
+    const invalid = { ...recap, attempts_count: 1 };
+    const result = await saveCompletedSessionRecap(USER_A, invalid);
+    expect(result.ok).toBe(false);
+    expect(store.size).toBe(0);
+  });
+
+  it("ignores corrupted persisted entries and returns a warning", async () => {
+    const valid = buildSessionRecap(SESSION, [], SESSION.ended_at!);
+    const invalid = { ...valid, landed_count: 2, attempts_count: 0 };
+    store.set(
+      "onflow.user.user-1.completedSessions.v1",
+      JSON.stringify([valid, invalid]),
+    );
+
+    const listed = await listCompletedSessionRecaps(USER_A);
+    expect(listed.data).toEqual([valid]);
+    expect(listed.loadError).toContain("invalid");
+  });
+
+  it("rejects recaps whose end time precedes start time", async () => {
+    const recap = buildSessionRecap(SESSION, [], SESSION.ended_at!);
+    const invalid = {
+      ...recap,
+      ended_at: "2026-07-11T11:59:00.000Z",
+    };
+    const result = await saveCompletedSessionRecap(USER_A, invalid);
+    expect(result.ok).toBe(false);
   });
 });
