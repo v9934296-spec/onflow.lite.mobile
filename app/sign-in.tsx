@@ -35,13 +35,14 @@ export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ reason?: string | string[] }>();
   const reason = queryParam(params.reason);
-  const { completeSignIn } = useAuth();
+  const { completeSignIn, authError, dismissAuthError } = useAuth();
 
   const [email, setEmail] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
+  const visibleError = error ?? authError;
 
   useEffect(() => {
     if (!IS_IOS) return;
@@ -61,6 +62,7 @@ export default function SignInScreen() {
 
   const handleApple = useCallback(async () => {
     if (busy) return;
+    dismissAuthError();
     if (!isExpoApiUrlConfigured()) {
       setError(missingApiBaseUserMessage());
       return;
@@ -90,10 +92,11 @@ export default function SignInScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, finishSignIn]);
+  }, [busy, dismissAuthError, finishSignIn]);
 
   const handleEmail = useCallback(async () => {
     if (busy) return;
+    dismissAuthError();
     if (!isExpoApiUrlConfigured()) {
       setError(missingApiBaseUserMessage());
       return;
@@ -115,7 +118,7 @@ export default function SignInScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, email, inviteCode, finishSignIn]);
+  }, [busy, dismissAuthError, email, inviteCode, finishSignIn]);
 
   const showAndroidNotice = !IS_IOS && !ENABLE_EMAIL_AUTH;
 
@@ -142,7 +145,7 @@ export default function SignInScreen() {
           ) : null}
         </View>
 
-        {error ? <Text style={s.error}>{error}</Text> : null}
+        {visibleError ? <Text style={s.error}>{visibleError}</Text> : null}
 
         {appleAvailable ? (
           <View pointerEvents={busy ? "none" : "auto"} style={{ opacity: busy ? 0.45 : 1 }}>
