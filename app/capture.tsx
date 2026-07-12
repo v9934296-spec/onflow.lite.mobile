@@ -5,7 +5,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 
-import { savePendingAnalysisJob } from "../src/analysis/pendingAnalysisStore";
+import {
+  clearPendingAnalysisJob,
+  savePendingAnalysisJob,
+} from "../src/analysis/pendingAnalysisStore";
 import { track } from "../src/analytics";
 import { uploadClipToSession } from "../src/api/clipApi";
 import { useAccount } from "../src/auth/accountContext";
@@ -59,11 +62,23 @@ export default function Capture() {
     );
   };
 
+  const discardPendingJob = async (userId: string) => {
+    const result = await clearPendingAnalysisJob(userId);
+    if (!result.ok) {
+      Alert.alert("Couldn't discard analysis", result.error);
+      return;
+    }
+    setPendingClipJobId(null);
+    setAnalysis(null);
+  };
+
   const uploadUserClip = async (asset: ImagePicker.ImagePickerAsset, called: string) => {
     if (!activeSession?.id || !user?.user_id) {
       throw new Error("No signed-in active session is available for this upload.");
     }
 
+    const userId = user.user_id;
+    const sessionId = activeSession.id;
     const fileInfo = await FileSystem.getInfoAsync(asset.uri, { size: true });
     if (!fileInfo.exists || typeof fileInfo.size !== "number" || fileInfo.size <= 0) {
       throw new Error("Could not read the video file size.");
@@ -71,14 +86,20 @@ export default function Capture() {
     if (typeof asset.duration !== "number" || asset.duration <= 0) {
       throw new Error("Could not read the video duration. Choose a different clip.");
     }
-    if (typeof asset.width !== "number" || asset.width <= 0 || typeof asset.height !== "number" || asset.height <= 0) {
+    if (
+      typeof asset.width !== "number" ||
+      asset.width <= 0 ||
+      typeof asset.height !== "number" ||
+      asset.height <= 0
+    ) {
       throw new Error("Could not read the video dimensions. Choose a different clip.");
     }
 
+    let recoveryJobId: string | null = null;
     const durationSec = asset.duration / 1000;
     setStatusLabel("Preparing upload…");
     const uploaded = await uploadClipToSession({
-      sessionId: activeSession.id,
+      sessionId,
       fileUri: asset.uri,
       mimeType: resolveMimeType(asset),
       durationSeconds: durationSec,
@@ -86,6 +107,21 @@ export default function Capture() {
       heightPx: asset.height,
       sizeBytes: fileInfo.size,
       clientHintTrickId: selectedTrick?.trickId ?? null,
+      onInitiated: async (initiated) => {
+        const pendingResult = await savePendingAnalysisJob(userId, {
+          jobId: initiated.clip_id,
+          sessionId,
+          trickName: called,
+          selectedTrick,
+          submittedAt: new Date().toISOString(),
+        });
+        if (!pendingResult.ok) {
+          throw new Error(`Could not save analysis recovery data: ${pendingResult.error}`);
+        }
+        recoveryJobId = initiated.clip_id;
+        setAnalysis(null);
+        setPendingClipJobId(initiated.clip_id);
+      },
       onProgress: (fraction) => {
         setStatusLabel(`Uploading clip… ${Math.round(fraction * 100)}%`);
       },
@@ -95,27 +131,31 @@ export default function Capture() {
       if (isQuotaExceededMessage(uploaded.error.message)) {
         throw new QuotaExceededError(uploaded.error.message);
       }
+      if (recoveryJobId) {
+        track("capture_interrupted", {
+          source: "user_upload",
+          trick: called,
+          job_id: recoveryJobId,
+          message: uploaded.error.message,
+        });
+        Alert.alert(
+          "Upload interrupted",
+          `${uploaded.error.message}\n\nThe job ID was saved. You can check whether the server received it or discard it and try again.`,
+          [
+            {
+              text: "Discard",
+              style: "destructive",
+              onPress: () => void discardPendingJob(userId),
+            },
+            { text: "Check status", onPress: () => router.replace("/analyzing") },
+          ],
+        );
+        return;
+      }
       throw new Error(uploaded.error.message);
     }
 
-    const pendingResult = await savePendingAnalysisJob(user.user_id, {
-      jobId: uploaded.data,
-      sessionId: activeSession.id,
-      trickName: called,
-      selectedTrick,
-      submittedAt: new Date().toISOString(),
-    });
-
-    setAnalysis(null);
-    setPendingClipJobId(uploaded.data);
     track("capture_completed", { source: "user_upload", trick: called, job_id: uploaded.data });
-
-    if (!pendingResult.ok) {
-      Alert.alert(
-        "Analysis started",
-        "The clip uploaded, but this device could not save recovery data. Keep the app open until analysis finishes.",
-      );
-    }
     router.push("/analyzing");
   };
 
