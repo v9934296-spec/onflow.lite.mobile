@@ -1,7 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LandedAttempt, LoadResult, StorageResult } from "./types";
+import { userScopedStorageKey } from "./storage/userScopedStorage";
 
-const KEY = "onflow_lite_progress_v1";
+function keyFor(userId: string): string {
+  return userScopedStorageKey(userId, "progress");
+}
 
 export type DayStatus = "landed" | "bailed" | "none";
 
@@ -111,9 +114,9 @@ export function getBestTrickStreak(
   return best && best.streak > 0 ? best : null;
 }
 
-export async function loadAttempts(): Promise<LoadResult<LandedAttempt[]>> {
+export async function loadAttempts(userId: string): Promise<LoadResult<LandedAttempt[]>> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(keyFor(userId));
     if (!raw) return { data: [] };
 
     const parsed: unknown = JSON.parse(raw);
@@ -130,9 +133,12 @@ export async function loadAttempts(): Promise<LoadResult<LandedAttempt[]>> {
   }
 }
 
-export async function saveAttempts(attempts: LandedAttempt[]): Promise<StorageResult> {
+export async function saveAttempts(
+  userId: string,
+  attempts: LandedAttempt[],
+): Promise<StorageResult> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(attempts));
+    await AsyncStorage.setItem(keyFor(userId), JSON.stringify(attempts));
     return { ok: true };
   } catch (error) {
     return {
@@ -142,14 +148,17 @@ export async function saveAttempts(attempts: LandedAttempt[]): Promise<StorageRe
   }
 }
 
-export async function appendAttempt(attempt: LandedAttempt): Promise<StorageResult> {
-  const { data } = await loadAttempts();
-  return saveAttempts([...data, attempt]);
+export async function appendAttempt(
+  userId: string,
+  attempt: LandedAttempt,
+): Promise<StorageResult> {
+  const { data } = await loadAttempts(userId);
+  return saveAttempts(userId, [...data, attempt]);
 }
 
-export async function clearAttempts(): Promise<StorageResult> {
+export async function clearAttempts(userId: string): Promise<StorageResult> {
   try {
-    await AsyncStorage.removeItem(KEY);
+    await AsyncStorage.removeItem(keyFor(userId));
     return { ok: true };
   } catch (error) {
     return {
