@@ -14,6 +14,21 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
+function rejectWhenAborted(init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    const rejectAbort = () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      reject(error);
+    };
+    if (init?.signal?.aborted) {
+      rejectAbort();
+      return;
+    }
+    init?.signal?.addEventListener("abort", rejectAbort, { once: true });
+  });
+}
+
 describe("apiRequest", () => {
   const originalUrl = process.env.EXPO_PUBLIC_API_URL;
   const fetchMock = vi.fn();
@@ -117,14 +132,25 @@ describe("apiRequest", () => {
     }
   });
 
-  it("classifies timeout via AbortError", async () => {
-    const abortErr = new Error("aborted");
-    abortErr.name = "AbortError";
-    fetchMock.mockRejectedValue(abortErr);
+  it("classifies an actual timer abort as timeout", async () => {
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => rejectWhenAborted(init));
     const result = await apiRequest("/health", { timeoutMs: 1 });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe("timeout");
+    }
+  });
+
+  it("classifies a caller abort as cancellation, not timeout", async () => {
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => rejectWhenAborted(init));
+    const controller = new AbortController();
+    const pending = apiRequest("/health", { timeoutMs: 1_000, signal: controller.signal });
+    controller.abort();
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("network");
+      expect(result.error.message).toBe("Request cancelled.");
     }
   });
 
