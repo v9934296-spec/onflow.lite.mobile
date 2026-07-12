@@ -34,7 +34,8 @@ export interface Analysis {
   selfReportOnly?: boolean;
   engineVersion: string;
   evidenceClass: EvidenceClass;
-  confidence: number; // 0–100
+  /** Calibrated model confidence only. Never derive this from the technique rating. */
+  confidence: number | null;
   receipts: Receipt[];
   abstainReason: string | null;
 }
