@@ -1,8 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { userScopedStorageKey } from "../storage/userScopedStorage";
 import type { LoadResult, StorageResult } from "../types";
 import type { SessionRecap } from "../types/sessionRecap";
 
-const KEY = "onflow.completedSessions.v1";
+function keyFor(userId: string): string {
+  return userScopedStorageKey(userId, "completedSessions");
+}
 
 function isSessionRecap(value: unknown): value is SessionRecap {
   if (!value || typeof value !== "object") return false;
@@ -18,9 +22,9 @@ function isSessionRecap(value: unknown): value is SessionRecap {
   );
 }
 
-async function loadAll(): Promise<LoadResult<SessionRecap[]>> {
+async function loadAll(userId: string): Promise<LoadResult<SessionRecap[]>> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(keyFor(userId));
     if (!raw) return { data: [] };
 
     const parsed: unknown = JSON.parse(raw);
@@ -37,9 +41,9 @@ async function loadAll(): Promise<LoadResult<SessionRecap[]>> {
   }
 }
 
-async function saveAll(recaps: SessionRecap[]): Promise<StorageResult> {
+async function saveAll(userId: string, recaps: SessionRecap[]): Promise<StorageResult> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(recaps));
+    await AsyncStorage.setItem(keyFor(userId), JSON.stringify(recaps));
     return { ok: true };
   } catch (error) {
     return {
@@ -50,27 +54,31 @@ async function saveAll(recaps: SessionRecap[]): Promise<StorageResult> {
 }
 
 export async function loadCompletedSessionRecap(
+  userId: string,
   sessionId: string,
 ): Promise<LoadResult<SessionRecap | null>> {
   const sid = sessionId.trim();
   if (!sid) return { data: null };
 
-  const result = await loadAll();
+  const result = await loadAll(userId);
   const recap = result.data.find((r) => r.session_id === sid) ?? null;
   return { data: recap, loadError: result.loadError };
 }
 
-export async function saveCompletedSessionRecap(recap: SessionRecap): Promise<StorageResult> {
-  const result = await loadAll();
+export async function saveCompletedSessionRecap(
+  userId: string,
+  recap: SessionRecap,
+): Promise<StorageResult> {
+  const result = await loadAll(userId);
   const without = result.data.filter((r) => r.session_id !== recap.session_id);
   const next = [recap, ...without].sort(
     (a, b) => new Date(b.ended_at).getTime() - new Date(a.ended_at).getTime(),
   );
-  return saveAll(next);
+  return saveAll(userId, next);
 }
 
-export async function listCompletedSessionRecaps(): Promise<LoadResult<SessionRecap[]>> {
-  const result = await loadAll();
+export async function listCompletedSessionRecaps(userId: string): Promise<LoadResult<SessionRecap[]>> {
+  const result = await loadAll(userId);
   const sorted = [...result.data].sort(
     (a, b) => new Date(b.ended_at).getTime() - new Date(a.ended_at).getTime(),
   );
