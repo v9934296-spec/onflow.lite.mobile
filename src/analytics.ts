@@ -12,6 +12,7 @@ export type AnalyticsEvent =
   | "notifications_viewed"
   | "capture_completed"
   | "capture_failed"
+  | "capture_interrupted"
   | "land_reported"
   | "log_viewed"
   | "log_exported"
