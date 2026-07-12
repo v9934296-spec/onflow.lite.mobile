@@ -13,7 +13,7 @@ import { useSession } from "../src/session";
 
 export default function Home() {
   const router = useRouter();
-  const { log, attempts, resetLoop } = useSession();
+  const { log, attempts, resetLoop, selectedTrick } = useSession();
   const { user } = useAccount();
   const { signOut } = useAuth();
   const {
@@ -87,6 +87,9 @@ export default function Home() {
           {activeSession.focus_trick ? (
             <Text style={s.sessionMeta}>Focus: {activeSession.focus_trick}</Text>
           ) : null}
+          {selectedTrick ? (
+            <Text style={s.sessionTrick}>{selectedTrick.canonicalName}</Text>
+          ) : null}
           <Text style={s.sessionMeta}>
             {activeSession.attempt_count} attempt{activeSession.attempt_count === 1 ? "" : "s"}
           </Text>
@@ -126,11 +129,16 @@ export default function Home() {
             <Text style={s.loadingText}>Checking for active session…</Text>
           </View>
         ) : hasActiveSession ? (
-          <Btn
-            label={sessionBusy ? "Opening session…" : "Continue session"}
-            onPress={() => void enterSession(false)}
-            disabled={sessionBusy}
-          />
+          <>
+            <Btn
+              label={sessionBusy ? "Opening session…" : selectedTrick ? "Change trick" : "Continue session"}
+              onPress={() => void (selectedTrick ? router.push("/trick") : enterSession(false))}
+              disabled={sessionBusy}
+            />
+            {selectedTrick ? (
+              <Text style={s.selectedHint}>Current trick: {selectedTrick.canonicalName}</Text>
+            ) : null}
+          </>
         ) : (
           <Btn
             label={sessionBusy ? "Starting session…" : "Start session"}
@@ -160,6 +168,8 @@ const s = StyleSheet.create({
   signedInAs: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 4 },
   streak: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 4 },
   sessionMeta: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 2 },
+  sessionTrick: { fontFamily: F.bold, fontSize: 16, color: C.offwhite, marginTop: 4 },
+  selectedHint: { fontFamily: F.body, fontSize: 12, color: C.dim, textAlign: "center" },
   error: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.red, textAlign: "center" },
   loadingRow: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center", paddingVertical: 12 },
   loadingText: { fontFamily: F.body, fontSize: 13, color: C.dim },

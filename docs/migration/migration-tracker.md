@@ -45,7 +45,7 @@ Use for every migrated feature:
 | 1 | API client and environment | Complete | Pending manual | Yes (66) | `f6bc3a4` |
 | 2 | Authentication and user state | Complete | Pending manual | Yes (74) | `c76b24a` |
 | 3 | Session creation | Complete | Pending manual | Yes (89) | `d57b2cf` |
-| 4 | Trick catalog and picker | Not started | No | No | — |
+| 4 | Trick catalog and picker | Complete | Pending manual | Yes | `TBD` |
 | 5 | Attempt logging | Not started | No | No | — |
 | 6 | End-session recap | Not started | No | No | — |
 | 7 | Session history | Not started | No | No | — |

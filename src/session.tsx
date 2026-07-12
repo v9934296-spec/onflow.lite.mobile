@@ -9,12 +9,15 @@ import React, {
 import { track } from "./analytics";
 import { loadAttempts, saveAttempts } from "./progress";
 import { Analysis, LandedAttempt, LoggedClip, ManualLog, StorageResult } from "./types";
+import type { SelectedTrick } from "./tricks/types";
 import { clearLog as clearLogStorage, loadLog, saveLog } from "./storage";
 
 interface SessionState {
   isHydrated: boolean;
   trick: string | null;
+  selectedTrick: SelectedTrick | null;
   setTrick: (trick: string | null) => void;
+  setSelectedTrick: (trick: SelectedTrick | null) => void;
   analysis: Analysis | null;
   setAnalysis: (analysis: Analysis | null) => void;
   log: LoggedClip[];
@@ -39,7 +42,8 @@ function storageFailure(result: StorageResult, fallback: string): string | null 
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
-  const [trick, setTrick] = useState<string | null>(null);
+  const [trick, setTrickState] = useState<string | null>(null);
+  const [selectedTrick, setSelectedTrickState] = useState<SelectedTrick | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [log, setLog] = useState<LoggedClip[]>([]);
   const [attempts, setAttempts] = useState<LandedAttempt[]>([]);
@@ -194,8 +198,18 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     track("log_cleared");
   }, [warnStorage]);
 
+  const setTrick = useCallback((value: string | null) => {
+    setTrickState(value);
+  }, []);
+
+  const setSelectedTrick = useCallback((value: SelectedTrick | null) => {
+    setSelectedTrickState(value);
+    setTrickState(value?.canonicalName ?? null);
+  }, []);
+
   const resetLoop = useCallback(() => {
-    setTrick(null);
+    setTrickState(null);
+    setSelectedTrickState(null);
     setAnalysis(null);
   }, []);
 
@@ -204,7 +218,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       value={{
         isHydrated,
         trick,
+        selectedTrick,
         setTrick,
+        setSelectedTrick,
         analysis,
         setAnalysis,
         log,
