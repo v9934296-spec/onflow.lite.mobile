@@ -13,6 +13,7 @@ export interface ClipJobResult {
   review_summary: string;
   review_readiness: string;
   observations: string[];
+  model_confidence_percent: number | null;
   normalized_review?: ClipJobNormalizedReview | null;
   best_cue?: string | null;
   first_actionable_cue_shown?: string | null;
@@ -66,13 +67,12 @@ function collectJobCandidates(json: Record<string, unknown>): Record<string, unk
 function rankJobCandidate(c: Record<string, unknown>): number {
   const st = normalizeStatus(c.status);
   if (!st) return -1;
-  if (st === "completed" && c.result != null && typeof c.result === "object") return 100;
+  if (st === "completed" && c.result != null) return 100;
   if (st === "failed") {
     const fr = c.failure_reason ?? c.failureReason;
     return typeof fr === "string" && fr.trim() ? 80 : 15;
   }
   if (st === "processing" || st === "pending") return 60;
-  if (st === "completed") return 20;
   return 0;
 }
 
@@ -94,7 +94,14 @@ function extractJobPayload(json: unknown): Record<string, unknown> | null {
 
 function stringArray(v: unknown): string[] {
   if (!Array.isArray(v)) return [];
-  return v.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return v
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function optionalString(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
 }
 
 function parseScore(v: unknown): number | null {
@@ -103,16 +110,22 @@ function parseScore(v: unknown): number | null {
   return v;
 }
 
+function parseConfidencePercent(v: unknown): number | null {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  if (v < 0 || v > 100) return null;
+  return v;
+}
+
 function parseNormalizedReview(raw: unknown): ClipJobNormalizedReview | null {
   if (!isRecord(raw)) return null;
-  const summary = typeof raw.summary === "string" ? raw.summary.trim() : "";
+  const summary = optionalString(raw.summary);
   if (!summary) return null;
   return {
     summary,
     score: parseScore(raw.score),
     what_to_fix: stringArray(raw.what_to_fix ?? raw.whatToFix),
     what_you_did_right: stringArray(raw.what_you_did_right ?? raw.whatYouDidRight),
-    drill: typeof raw.drill === "string" && raw.drill.trim() ? raw.drill.trim() : null,
+    drill: optionalString(raw.drill),
   };
 }
 
@@ -121,67 +134,54 @@ function parseBreakdown(raw: unknown): { k: string; v: number }[] | null {
   const items: { k: string; v: number }[] = [];
   for (const row of raw) {
     if (!isRecord(row)) continue;
-    const k = typeof row.k === "string" ? row.k : typeof row.label === "string" ? row.label : null;
+    const k = optionalString(row.k ?? row.label);
     const v = typeof row.v === "number" ? row.v : typeof row.score === "number" ? row.score : null;
     if (k && v != null && Number.isFinite(v)) items.push({ k, v });
   }
   return items.length ? items : null;
 }
 
-function parseClipJobResult(raw: unknown, clipLabelFallback: string): ClipJobResult {
-  if (!isRecord(raw)) {
-    return {
-      clip_label: clipLabelFallback,
-      review_summary: "Analysis completed but the result could not be read.",
-      review_readiness: "insufficient",
-      observations: [],
-    };
-  }
+function parseClipJobResult(raw: unknown): ClipJobResult | null {
+  if (!isRecord(raw)) return null;
 
-  const clip_label =
-    typeof raw.clip_label === "string" && raw.clip_label.trim()
-      ? raw.clip_label.trim()
-      : typeof raw.clipLabel === "string" && raw.clipLabel.trim()
-        ? raw.clipLabel.trim()
-        : clipLabelFallback;
+  const clipLabel = optionalString(raw.clip_label ?? raw.clipLabel) ?? "";
+  const reviewSummary = optionalString(raw.review_summary ?? raw.reviewSummary) ?? "";
+  const reviewReadiness = optionalString(raw.review_readiness ?? raw.reviewReadiness);
+  if (!reviewReadiness) return null;
 
-  const review_summary =
-    typeof raw.review_summary === "string"
-      ? raw.review_summary
-      : typeof raw.reviewSummary === "string"
-        ? raw.reviewSummary
-        : "Analysis complete.";
-
-  const review_readiness =
-    typeof raw.review_readiness === "string"
-      ? raw.review_readiness
-      : typeof raw.reviewReadiness === "string"
-        ? raw.reviewReadiness
-        : "limited";
-
+  const normalizedReview = parseNormalizedReview(raw.normalized_review ?? raw.normalizedReview);
   const skateRaw = raw.skate_clip_review ?? raw.skateClipReview;
-  let skate_clip_review: ClipJobResult["skate_clip_review"] = null;
+  let skateClipReview: ClipJobResult["skate_clip_review"] = null;
   if (isRecord(skateRaw)) {
-    skate_clip_review = {
-      verdict: typeof skateRaw.verdict === "string" ? skateRaw.verdict : null,
+    skateClipReview = {
+      verdict: optionalString(skateRaw.verdict),
       breakdown: parseBreakdown(skateRaw.breakdown),
     };
   }
 
+  const observations = stringArray(raw.observations);
+  const hasReviewContent = Boolean(
+    reviewSummary ||
+      normalizedReview?.summary ||
+      skateClipReview?.verdict ||
+      observations.length > 0,
+  );
+  if (!hasReviewContent) return null;
+
   return {
-    clip_label,
-    review_summary,
-    review_readiness,
-    observations: stringArray(raw.observations),
-    normalized_review: parseNormalizedReview(raw.normalized_review ?? raw.normalizedReview),
-    best_cue: typeof raw.best_cue === "string" ? raw.best_cue : typeof raw.bestCue === "string" ? raw.bestCue : null,
-    first_actionable_cue_shown:
-      typeof raw.first_actionable_cue_shown === "string"
-        ? raw.first_actionable_cue_shown
-        : typeof raw.firstActionableCueShown === "string"
-          ? raw.firstActionableCueShown
-          : null,
-    skate_clip_review,
+    clip_label: clipLabel,
+    review_summary: reviewSummary,
+    review_readiness: reviewReadiness,
+    observations,
+    model_confidence_percent: parseConfidencePercent(
+      raw.model_confidence_percent ?? raw.modelConfidencePercent ?? raw.confidence_percent,
+    ),
+    normalized_review: normalizedReview,
+    best_cue: optionalString(raw.best_cue ?? raw.bestCue),
+    first_actionable_cue_shown: optionalString(
+      raw.first_actionable_cue_shown ?? raw.firstActionableCueShown,
+    ),
+    skate_clip_review: skateClipReview,
   };
 }
 
@@ -190,18 +190,18 @@ export function parseClipJob(json: unknown): ClipJob | null {
   const root = extractJobPayload(json);
   if (!root) return null;
 
-  const job_id = jobIdFromRecord(root);
+  const jobId = jobIdFromRecord(root);
   const status = normalizeStatus(root.status);
-  if (!job_id || !status) return null;
+  if (!jobId || !status) return null;
 
   if (status === "pending" || status === "processing") {
-    return { job_id, status };
+    return { job_id: jobId, status };
   }
 
   if (status === "failed") {
-    const fr = root.failure_reason ?? root.failureReason;
-    if (typeof fr !== "string" || !fr.trim()) return null;
-    return { job_id, status: "failed", failure_reason: fr.trim() };
+    const failureReason = optionalString(root.failure_reason ?? root.failureReason);
+    if (!failureReason) return null;
+    return { job_id: jobId, status: "failed", failure_reason: failureReason };
   }
 
   let resultRaw: unknown = root.result;
@@ -209,20 +209,11 @@ export function parseClipJob(json: unknown): ClipJob | null {
     try {
       resultRaw = JSON.parse(resultRaw) as unknown;
     } catch {
-      resultRaw = null;
+      return null;
     }
   }
 
-  const hinted =
-    isRecord(resultRaw) && typeof resultRaw.clip_label === "string"
-      ? resultRaw.clip_label
-      : isRecord(resultRaw) && typeof resultRaw.clipLabel === "string"
-        ? resultRaw.clipLabel
-        : "untagged";
-
-  return {
-    job_id,
-    status: "completed",
-    result: parseClipJobResult(resultRaw, hinted),
-  };
+  const result = parseClipJobResult(resultRaw);
+  if (!result) return null;
+  return { job_id: jobId, status: "completed", result };
 }
