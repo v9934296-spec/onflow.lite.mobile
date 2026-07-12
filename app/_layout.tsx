@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { checkHealth, guardApiBaseUrlAtStartup } from "../src/api";
 import { AccountProvider } from "../src/auth/accountContext";
 import { AuthProvider } from "../src/auth/authContext";
+import { SkateSessionProvider } from "../src/skateSession/skateSessionContext";
 import { ApiConfigBanner } from "../src/components/ApiConfigBanner";
 import { SessionProvider, useSession } from "../src/session";
 import { StorageWarningBanner } from "../src/ui";
@@ -102,7 +103,9 @@ export default function Layout() {
     <SessionProvider>
       <AccountProvider>
         <AuthProvider>
-          <RootLayout />
+          <SkateSessionProvider>
+            <RootLayout />
+          </SkateSessionProvider>
         </AuthProvider>
       </AccountProvider>
     </SessionProvider>

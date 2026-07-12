@@ -25,6 +25,7 @@ export {
   signInWithGoogle,
 } from "./authApi";
 export { checkHealth, parseHealthResponse } from "./health";
+export { createSkateSession, fetchSkateSession, parseSkateSession } from "./sessionApi";
 export {
   DEFAULT_REQUEST_TIMEOUT_MS,
   type ApiError,

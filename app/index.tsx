@@ -1,11 +1,12 @@
-import React, { useEffect } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useEffect, useState } from "react";
+import { ActivityIndicator, Text, View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
 import { useAccount } from "../src/auth/accountContext";
 import { useAuth } from "../src/auth/authContext";
 import { getBestTrickStreak, getLast7Days } from "../src/progress";
+import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow, WeekRow } from "../src/ui";
 import { useSession } from "../src/session";
@@ -15,13 +16,43 @@ export default function Home() {
   const { log, attempts, resetLoop } = useSession();
   const { user } = useAccount();
   const { signOut } = useAuth();
+  const {
+    activeSession,
+    hasActiveSession,
+    hydrateState,
+    hydrateError,
+    isCreating,
+    createError,
+    startSession,
+  } = useSkateSession();
   const insets = useSafeAreaInsets();
+  const [entering, setEntering] = useState(false);
   const week = getLast7Days(attempts);
   const bestStreak = getBestTrickStreak(attempts);
+
+  const sessionBusy = isCreating || entering;
+  const sessionLoading = hydrateState === "loading";
 
   useEffect(() => {
     track("home_viewed");
   }, []);
+
+  async function enterSession(createIfNeeded: boolean) {
+    if (sessionBusy || sessionLoading) return;
+    setEntering(true);
+    try {
+      if (createIfNeeded) {
+        const ok = await startSession();
+        if (!ok) return;
+      } else if (!hasActiveSession) {
+        return;
+      }
+      resetLoop();
+      router.push("/trick");
+    } finally {
+      setEntering(false);
+    }
+  }
 
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
@@ -46,6 +77,21 @@ export default function Home() {
         ) : null}
       </View>
 
+      {hasActiveSession && activeSession ? (
+        <Card accent={C.volt}>
+          <Eyebrow color={C.volt}>ACTIVE SESSION</Eyebrow>
+          {activeSession.spot_label ? (
+            <Text style={s.sessionMeta}>{activeSession.spot_label}</Text>
+          ) : null}
+          {activeSession.focus_trick ? (
+            <Text style={s.sessionMeta}>Focus: {activeSession.focus_trick}</Text>
+          ) : null}
+          <Text style={s.sessionMeta}>
+            {activeSession.attempt_count} attempt{activeSession.attempt_count === 1 ? "" : "s"}
+          </Text>
+        </Card>
+      ) : null}
+
       {attempts.length > 0 && (
         <Card>
           <Eyebrow color={C.volt}>LAST 7 DAYS</Eyebrow>
@@ -59,15 +105,28 @@ export default function Home() {
         </Card>
       )}
 
+      {hydrateError ? <Text style={s.error}>{hydrateError}</Text> : null}
+      {createError ? <Text style={s.error}>{createError}</Text> : null}
+
       <View style={{ gap: 10 }}>
-        <Btn
-          label="Film a clip"
-          onPress={() => {
-            track("clip_film_started");
-            resetLoop();
-            router.push("/trick");
-          }}
-        />
+        {sessionLoading ? (
+          <View style={s.loadingRow}>
+            <ActivityIndicator color={C.volt} />
+            <Text style={s.loadingText}>Checking for active session…</Text>
+          </View>
+        ) : hasActiveSession ? (
+          <Btn
+            label={sessionBusy ? "Opening session…" : "Continue session"}
+            onPress={() => void enterSession(false)}
+            disabled={sessionBusy}
+          />
+        ) : (
+          <Btn
+            label={sessionBusy ? "Starting session…" : "Start session"}
+            onPress={() => void enterSession(true)}
+            disabled={sessionBusy}
+          />
+        )}
         <Btn
           label={`Session log${log.length > 0 ? ` · ${log.length}` : ""}`}
           variant="ghost"
@@ -89,4 +148,8 @@ const s = StyleSheet.create({
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
   signedInAs: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 4 },
   streak: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 4 },
+  sessionMeta: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 2 },
+  error: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.red, textAlign: "center" },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center", paddingVertical: 12 },
+  loadingText: { fontFamily: F.body, fontSize: 13, color: C.dim },
 });
