@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Text, View, StyleSheet } from "react-native";
+import { ActivityIndicator, Alert, Text, View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
@@ -10,6 +10,7 @@ import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow, WeekRow } from "../src/ui";
 import { useSession } from "../src/session";
+import { useSessionAttempts } from "../src/sessionAttempts/useSessionAttempts";
 
 export default function Home() {
   const router = useRouter();
@@ -25,13 +26,24 @@ export default function Home() {
     createError,
     startSession,
     refreshActiveSession,
+    endSession,
+    isEnding,
+    endError,
+    dismissEndError,
   } = useSkateSession();
+  const {
+    counts: sessionCounts,
+    isSubmitting: loggingAttempt,
+    submitError: attemptError,
+    logAttempt,
+    dismissSubmitError,
+  } = useSessionAttempts(activeSession?.id ?? null);
   const insets = useSafeAreaInsets();
   const [entering, setEntering] = useState(false);
   const week = getLast7Days(attempts);
   const bestStreak = getBestTrickStreak(attempts);
 
-  const sessionBusy = isCreating || entering;
+  const sessionBusy = isCreating || entering || loggingAttempt || isEnding;
   const sessionLoading = hydrateState === "loading";
 
   useEffect(() => {
@@ -53,6 +65,36 @@ export default function Home() {
     } finally {
       setEntering(false);
     }
+  }
+
+  async function handleEndSession() {
+    if (sessionBusy || !hasActiveSession) return;
+
+    const finish = async () => {
+      const result = await endSession();
+      if (!result.ok) return;
+      track("session_ended", {
+        session_id: result.recap.session_id,
+        attempts: result.recap.attempts_count,
+        landed: result.recap.landed_count,
+      });
+      resetLoop();
+      router.replace(`/recap?sessionId=${encodeURIComponent(result.recap.session_id)}`);
+    };
+
+    if (sessionCounts.total === 0) {
+      Alert.alert(
+        "End empty session?",
+        "You haven't logged any attempts. End anyway?",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "End session", style: "destructive", onPress: () => void finish() },
+        ],
+      );
+      return;
+    }
+
+    await finish();
   }
 
   return (
@@ -90,9 +132,13 @@ export default function Home() {
           {selectedTrick ? (
             <Text style={s.sessionTrick}>{selectedTrick.canonicalName}</Text>
           ) : null}
-          <Text style={s.sessionMeta}>
-            {activeSession.attempt_count} attempt{activeSession.attempt_count === 1 ? "" : "s"}
-          </Text>
+          {sessionCounts.total > 0 ? (
+            <Text style={s.sessionMeta}>
+              {sessionCounts.landed} landed · {sessionCounts.missed} missed · {sessionCounts.total} logged
+            </Text>
+          ) : (
+            <Text style={s.sessionMeta}>No attempts logged yet</Text>
+          )}
         </Card>
       ) : null}
 
@@ -121,6 +167,18 @@ export default function Home() {
         </View>
       ) : null}
       {createError ? <Text style={s.error}>{createError}</Text> : null}
+      {attemptError ? (
+        <View style={{ gap: 8 }}>
+          <Text style={s.error}>{attemptError}</Text>
+          <Btn label="Dismiss" variant="ghost" onPress={dismissSubmitError} />
+        </View>
+      ) : null}
+      {endError ? (
+        <View style={{ gap: 8 }}>
+          <Text style={s.error}>{endError}</Text>
+          <Btn label="Dismiss" variant="ghost" onPress={dismissEndError} />
+        </View>
+      ) : null}
 
       <View style={{ gap: 10 }}>
         {sessionLoading ? (
@@ -136,8 +194,29 @@ export default function Home() {
               disabled={sessionBusy}
             />
             {selectedTrick ? (
-              <Text style={s.selectedHint}>Current trick: {selectedTrick.canonicalName}</Text>
+              <>
+                <Text style={s.selectedHint}>Current trick: {selectedTrick.canonicalName}</Text>
+                <View style={s.outcomeRow}>
+                  <Btn
+                    label={loggingAttempt ? "Saving…" : "Land"}
+                    onPress={() => void logAttempt(selectedTrick, "landed")}
+                    disabled={sessionBusy}
+                  />
+                  <Btn
+                    label={loggingAttempt ? "Saving…" : "Miss"}
+                    variant="ghost"
+                    onPress={() => void logAttempt(selectedTrick, "missed")}
+                    disabled={sessionBusy}
+                  />
+                </View>
+              </>
             ) : null}
+            <Btn
+              label={isEnding ? "Ending session…" : "End session"}
+              variant="red"
+              onPress={() => void handleEndSession()}
+              disabled={sessionBusy}
+            />
           </>
         ) : (
           <Btn
@@ -170,6 +249,7 @@ const s = StyleSheet.create({
   sessionMeta: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 2 },
   sessionTrick: { fontFamily: F.bold, fontSize: 16, color: C.offwhite, marginTop: 4 },
   selectedHint: { fontFamily: F.body, fontSize: 12, color: C.dim, textAlign: "center" },
+  outcomeRow: { flexDirection: "row", gap: 10 },
   error: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.red, textAlign: "center" },
   loadingRow: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center", paddingVertical: 12 },
   loadingText: { fontFamily: F.body, fontSize: 13, color: C.dim },
