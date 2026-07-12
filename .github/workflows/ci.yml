@@ -24,24 +24,16 @@ jobs:
       - run: npm ci
 
       - name: Typecheck
-        id: typecheck
-        continue-on-error: true
         run: |
           set -o pipefail
           npm run typecheck 2>&1 | tee typecheck.log
 
       - name: Unit tests
-        id: tests
-        if: always()
-        continue-on-error: true
         run: |
           set -o pipefail
           npm test 2>&1 | tee tests.log
 
       - name: iOS bundle check
-        id: bundle
-        if: always()
-        continue-on-error: true
         run: |
           set -o pipefail
           npm run bundle:ios 2>&1 | tee bundle-ios.log
@@ -57,13 +49,3 @@ jobs:
             bundle-ios.log
           if-no-files-found: ignore
           retention-days: 7
-
-      - name: Enforce validation result
-        if: always()
-        run: |
-          if [ "${{ steps.typecheck.outcome }}" != "success" ] || \
-             [ "${{ steps.tests.outcome }}" != "success" ] || \
-             [ "${{ steps.bundle.outcome }}" != "success" ]; then
-            echo "One or more validation gates failed. Download the validation-logs artifact."
-            exit 1
-          fi
