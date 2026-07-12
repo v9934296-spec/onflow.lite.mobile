@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { track } from "../src/analytics";
+
 import { loadLastRecapSessionId } from "../src/activeSessionStore";
+import { track } from "../src/analytics";
+import { useAccount } from "../src/auth/accountContext";
 import { loadCompletedSessionRecap } from "../src/sessionRecap/completedSessionStore";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow } from "../src/ui";
@@ -18,8 +20,7 @@ function formatDuration(seconds: number | null): string {
 
 function formatLandedRate(recap: SessionRecap): string {
   if (recap.attempts_count === 0) return "No attempts logged";
-  const pct =
-    recap.landed_rate != null ? ` (${Math.round(recap.landed_rate * 100)}%)` : "";
+  const pct = recap.landed_rate != null ? ` (${Math.round(recap.landed_rate * 100)}%)` : "";
   return `${recap.landed_count}/${recap.attempts_count}${pct}`;
 }
 
@@ -27,6 +28,8 @@ export default function RecapScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ sessionId?: string }>();
+  const { user } = useAccount();
+  const userId = user?.user_id ?? null;
 
   const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(
     typeof params.sessionId === "string" && params.sessionId.trim() ? params.sessionId : null,
@@ -38,9 +41,13 @@ export default function RecapScreen() {
 
   useEffect(() => {
     if (resolvedSessionId) return;
+    if (!userId) {
+      setResolving(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
-      const sid = await loadLastRecapSessionId().catch(() => null);
+      const sid = await loadLastRecapSessionId(userId).catch(() => null);
       if (!cancelled) {
         setResolvedSessionId(sid);
         setResolving(false);
@@ -49,10 +56,10 @@ export default function RecapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [resolvedSessionId]);
+  }, [resolvedSessionId, userId]);
 
   useEffect(() => {
-    if (!resolvedSessionId) {
+    if (!userId || !resolvedSessionId) {
       setLoading(false);
       setRecap(null);
       return;
@@ -62,7 +69,7 @@ export default function RecapScreen() {
     setLoading(true);
     setError(null);
     void (async () => {
-      const result = await loadCompletedSessionRecap(resolvedSessionId);
+      const result = await loadCompletedSessionRecap(userId, resolvedSessionId);
       if (cancelled) return;
       if (result.loadError) setError(result.loadError);
       if (!result.data) {
@@ -78,7 +85,7 @@ export default function RecapScreen() {
     return () => {
       cancelled = true;
     };
-  }, [resolvedSessionId]);
+  }, [resolvedSessionId, userId]);
 
   if (resolving || loading) {
     return (
