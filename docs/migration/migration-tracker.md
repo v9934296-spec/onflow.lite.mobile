@@ -42,15 +42,15 @@ Use for every migrated feature:
 | Order | Feature | Status | Device Tested | Tests Passing | Commit |
 | ----- | ----------------------------- | ---------------------: | ------------: | ------------: | ------ |
 | 0 | Migration baseline | Complete | No | Yes | `b9c4eaa` |
-| 1 | API client and environment | Complete | Pending manual | Yes (66) | `f6bc3a4` |
-| 2 | Authentication and user state | Complete | Pending manual | Yes (74) | `c76b24a` |
-| 3 | Session creation | Complete | Pending manual | Yes (89) | `d57b2cf` |
-| 4 | Trick catalog and picker | Complete | Pending manual | Yes (100) | `12c6596` |
-| 5 | Attempt logging | Complete | Pending manual | Yes (111) | `eaa71e8` |
-| 6 | End-session recap | Complete | Pending manual | Yes (111) | `30579af` |
-| 7 | Session history | Complete | Pending manual | Yes (118) | `f4f542b` |
-| 8 | Clip selection and upload | Complete | Pending manual | Yes (132) | `e900950` |
-| 9 | Analysis job status | Complete | Pending manual | Yes (132) | `e900950` |
+| 1 | API client and environment | Complete | Yes | Yes (66) | `f6bc3a4` |
+| 2 | Authentication and user state | Complete | Yes | Yes (74) | `c76b24a` |
+| 3 | Session creation | Complete | Yes | Yes (89) | `d57b2cf` |
+| 4 | Trick catalog and picker | Complete | Yes | Yes (100) | `12c6596` |
+| 5 | Attempt logging | Complete | Yes | Yes (111) | `eaa71e8` |
+| 6 | End-session recap | Complete | Yes | Yes (111) | `30579af` |
+| 7 | Session history | Complete | Yes | Yes (118) | `f4f542b` |
+| 8 | Clip selection and upload | Complete | Yes | Yes (132) | `e900950` |
+| 9 | Analysis job status | Complete | Yes | Yes (132) | `e900950` |
 | 10 | Feed and social features | Deferred | No | No | — |
 | 11 | Subscriptions and paywall | Deferred | No | No | — |
 | 12 | Notifications and polish | Deferred | No | No | — |
