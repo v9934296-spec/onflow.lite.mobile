@@ -44,6 +44,8 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
   const creatingRef = useRef(false);
 
   const refreshActiveSession = useCallback(async () => {
+    setHydrateState("loading");
+    setHydrateError(null);
     const storedId = await loadActiveSessionId();
     if (!storedId) {
       setActiveSession(null);
@@ -79,6 +81,7 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
       setHydrateState("idle");
       setHydrateError(null);
       setCreateError(null);
+      void clearActiveSessionId();
       return;
     }
 
@@ -135,6 +138,7 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
       await saveActiveSessionId(result.data.id);
       setActiveSession(result.data);
       setHydrateState("ready");
+      setHydrateError(null);
       return true;
     } finally {
       creatingRef.current = false;

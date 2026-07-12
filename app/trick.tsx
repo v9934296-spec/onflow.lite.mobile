@@ -1,8 +1,9 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
-import { useRouter } from "expo-router";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
+import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { C, F } from "../src/theme";
 import { Btn, Eyebrow } from "../src/ui";
 import { TRICKS } from "../src/engine";
@@ -11,7 +12,20 @@ import { useSession } from "../src/session";
 export default function TrickPicker() {
   const router = useRouter();
   const { setTrick } = useSession();
+  const { hasActiveSession, hydrateState } = useSkateSession();
   const insets = useSafeAreaInsets();
+
+  if (hydrateState === "loading") {
+    return (
+      <View style={[s.screen, s.centered, { paddingTop: insets.top + 16 }]}>
+        <ActivityIndicator color={C.volt} />
+      </View>
+    );
+  }
+
+  if (!hasActiveSession) {
+    return <Redirect href="/" />;
+  }
 
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
@@ -46,6 +60,7 @@ export default function TrickPicker() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 16 },
+  centered: { alignItems: "center", justifyContent: "center" },
   title: { fontFamily: F.heading, fontSize: 24, color: C.offwhite },
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },

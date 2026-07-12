@@ -24,6 +24,7 @@ export default function Home() {
     isCreating,
     createError,
     startSession,
+    refreshActiveSession,
   } = useSkateSession();
   const insets = useSafeAreaInsets();
   const [entering, setEntering] = useState(false);
@@ -105,7 +106,17 @@ export default function Home() {
         </Card>
       )}
 
-      {hydrateError ? <Text style={s.error}>{hydrateError}</Text> : null}
+      {hydrateError ? (
+        <View style={{ gap: 8 }}>
+          <Text style={s.error}>{hydrateError}</Text>
+          <Btn
+            label="Retry"
+            variant="ghost"
+            onPress={() => void refreshActiveSession()}
+            disabled={sessionBusy || sessionLoading}
+          />
+        </View>
+      ) : null}
       {createError ? <Text style={s.error}>{createError}</Text> : null}
 
       <View style={{ gap: 10 }}>
