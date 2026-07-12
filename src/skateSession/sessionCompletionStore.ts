@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { isSessionRecap } from "../sessionRecap/completedSessionStore";
 import { userScopedStorageKey } from "../storage/userScopedStorage";
 import type { LoadResult, StorageResult } from "../types";
 import type { SessionRecap } from "../types/sessionRecap";
@@ -17,12 +18,15 @@ function keyFor(userId: string): string {
 function isPendingSessionCompletion(value: unknown): value is PendingSessionCompletion {
   if (!value || typeof value !== "object") return false;
   const o = value as Record<string, unknown>;
+  const sessionId = typeof o.sessionId === "string" ? o.sessionId.trim() : "";
+  const endedAt = typeof o.endedAt === "string" ? o.endedAt.trim() : "";
   return (
-    typeof o.sessionId === "string" &&
-    typeof o.endedAt === "string" &&
-    Boolean(o.recap) &&
-    typeof o.recap === "object" &&
-    typeof (o.recap as Record<string, unknown>).session_id === "string"
+    Boolean(sessionId) &&
+    Boolean(endedAt) &&
+    Number.isFinite(Date.parse(endedAt)) &&
+    isSessionRecap(o.recap) &&
+    o.recap.session_id === sessionId &&
+    o.recap.ended_at === endedAt
   );
 }
 
@@ -49,6 +53,9 @@ export async function savePendingSessionCompletion(
   userId: string,
   pending: PendingSessionCompletion,
 ): Promise<StorageResult> {
+  if (!isPendingSessionCompletion(pending)) {
+    return { ok: false, error: "Pending session completion is invalid and was not saved" };
+  }
   try {
     await AsyncStorage.setItem(keyFor(userId), JSON.stringify(pending));
     return { ok: true };
