@@ -87,6 +87,19 @@ describe("apiRequest", () => {
     }
   });
 
+  it("returns storage failure when the token provider cannot read secure credentials", async () => {
+    setAuthTokenProvider(async () => {
+      throw new Error("keychain unavailable");
+    });
+    const result = await apiRequest("/api/v1/account/me", { auth: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("storage");
+      expect(result.error.message).toContain("keychain unavailable");
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("classifies 401 as unauthorized", async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ detail: "Invalid token" }), { status: 401 }),
