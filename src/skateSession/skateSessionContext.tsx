@@ -12,13 +12,22 @@ import {
   clearActiveSessionId,
   loadActiveSessionId,
   saveActiveSessionId,
+  saveLastRecapSessionId,
 } from "../activeSessionStore";
-import { createSkateSession, fetchSkateSession } from "../api/sessionApi";
+import { createSkateSession, fetchSkateSession, updateSkateSession } from "../api/sessionApi";
 import { useAuth } from "../auth/authContext";
+import { buildSessionRecap } from "../sessionRecap/buildSessionRecap";
+import { saveCompletedSessionRecap } from "../sessionRecap/completedSessionStore";
+import { loadSessionAttempts } from "../sessionAttempts/sessionAttemptStore";
 import type { SkateSession } from "../types/api/session";
 import { isSkateSessionActive } from "../types/api/session";
+import type { SessionRecap } from "../types/sessionRecap";
 
 export type SkateSessionHydrateState = "idle" | "loading" | "ready" | "error";
+
+export type EndSessionResult =
+  | { ok: true; recap: SessionRecap }
+  | { ok: false; error: string };
 
 type SkateSessionContextValue = {
   activeSession: SkateSession | null;
@@ -27,9 +36,13 @@ type SkateSessionContextValue = {
   hydrateError: string | null;
   isCreating: boolean;
   createError: string | null;
+  isEnding: boolean;
+  endError: string | null;
   startSession: () => Promise<boolean>;
   continueSession: () => boolean;
   refreshActiveSession: () => Promise<void>;
+  endSession: () => Promise<EndSessionResult>;
+  dismissEndError: () => void;
 };
 
 const SkateSessionContext = createContext<SkateSessionContextValue | null>(null);
@@ -41,7 +54,10 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
   const [hydrateError, setHydrateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [isEnding, setIsEnding] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
   const creatingRef = useRef(false);
+  const endingRef = useRef(false);
 
   const refreshActiveSession = useCallback(async () => {
     setHydrateState("loading");
@@ -81,6 +97,7 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
       setHydrateState("idle");
       setHydrateError(null);
       setCreateError(null);
+      setEndError(null);
       void clearActiveSessionId();
       return;
     }
@@ -146,6 +163,49 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
     }
   }, [activeSession, isCreating]);
 
+  const endSession = useCallback(async (): Promise<EndSessionResult> => {
+    if (!activeSession || endingRef.current || isEnding) {
+      return { ok: false, error: "No active session to end." };
+    }
+
+    const sessionId = activeSession.id;
+    const endedAt = new Date().toISOString();
+
+    endingRef.current = true;
+    setIsEnding(true);
+    setEndError(null);
+
+    try {
+      const updateResult = await updateSkateSession(sessionId, { ended_at: endedAt });
+      if (!updateResult.ok) {
+        const message = updateResult.error.message;
+        setEndError(message);
+        return { ok: false, error: message };
+      }
+
+      const attemptsResult = await loadSessionAttempts(sessionId);
+      const recap = buildSessionRecap(activeSession, attemptsResult.data, endedAt);
+
+      const saveResult = await saveCompletedSessionRecap(recap);
+      if (!saveResult.ok) {
+        const message = saveResult.error;
+        setEndError(message);
+        return { ok: false, error: message };
+      }
+
+      await saveLastRecapSessionId(sessionId);
+      await clearActiveSessionId();
+      setActiveSession(null);
+      setHydrateState("ready");
+      return { ok: true, recap };
+    } finally {
+      endingRef.current = false;
+      setIsEnding(false);
+    }
+  }, [activeSession, isEnding]);
+
+  const dismissEndError = useCallback(() => setEndError(null), []);
+
   const continueSession = useCallback((): boolean => {
     return isSkateSessionActive(activeSession);
   }, [activeSession]);
@@ -160,9 +220,13 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
       hydrateError,
       isCreating,
       createError,
+      isEnding,
+      endError,
       startSession,
       continueSession,
       refreshActiveSession,
+      endSession,
+      dismissEndError,
     }),
     [
       activeSession,
@@ -171,9 +235,13 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
       hydrateError,
       isCreating,
       createError,
+      isEnding,
+      endError,
       startSession,
       continueSession,
       refreshActiveSession,
+      endSession,
+      dismissEndError,
     ],
   );
 

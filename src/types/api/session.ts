@@ -22,6 +22,14 @@ export interface CreateSkateSessionRequest {
   notes?: string | null;
 }
 
+export interface UpdateSkateSessionRequest {
+  ended_at?: string | null;
+  breakthrough_note?: string | null;
+  spot_label?: string | null;
+  focus_trick?: string | null;
+  notes?: string | null;
+}
+
 export function isSkateSessionActive(session: SkateSession | null | undefined): boolean {
   return Boolean(session && !session.ended_at && !session.deleted_at);
 }

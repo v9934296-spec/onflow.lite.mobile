@@ -1,6 +1,10 @@
 import type { ApiResult } from "./types";
 import { apiRequest } from "./client";
-import type { CreateSkateSessionRequest, SkateSession } from "../types/api/session";
+import type {
+  CreateSkateSessionRequest,
+  SkateSession,
+  UpdateSkateSessionRequest,
+} from "../types/api/session";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -65,6 +69,37 @@ export async function createSkateSession(
     auth: true,
     body,
   });
+  if (!result.ok) return result;
+
+  const session = parseSkateSession(result.data);
+  if (!session) {
+    return {
+      ok: false,
+      error: { kind: "malformed", message: "Could not parse session from server." },
+    };
+  }
+  return { ok: true, data: session, status: result.status };
+}
+
+export async function updateSkateSession(
+  sessionId: string,
+  patch: UpdateSkateSessionRequest,
+): Promise<ApiResult<SkateSession>> {
+  const body: Record<string, string> = {};
+  const spot = normalizeOptional(patch.spot_label);
+  const focus = normalizeOptional(patch.focus_trick);
+  const notes = normalizeOptional(patch.notes);
+  const breakthrough = normalizeOptional(patch.breakthrough_note);
+  if (spot) body.spot_label = spot;
+  if (focus) body.focus_trick = focus;
+  if (notes) body.notes = notes;
+  if (breakthrough) body.breakthrough_note = breakthrough;
+  if (patch.ended_at) body.ended_at = patch.ended_at;
+
+  const result = await apiRequest<unknown>(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}`,
+    { method: "PATCH", auth: true, body },
+  );
   if (!result.ok) return result;
 
   const session = parseSkateSession(result.data);

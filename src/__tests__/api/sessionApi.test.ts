@@ -11,7 +11,7 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
-import { createSkateSession, fetchSkateSession, parseSkateSession } from "../../api/sessionApi";
+import { createSkateSession, fetchSkateSession, parseSkateSession, updateSkateSession } from "../../api/sessionApi";
 import { resetAuthHooks, setAuthTokenProvider } from "../../api/auth";
 
 const SAMPLE_SESSION = {
@@ -120,5 +120,17 @@ describe("sessionApi", () => {
       expect(result.data).toBeNull();
       expect(result.status).toBe(404);
     }
+  });
+
+  it("updates a session via PATCH /api/v1/sessions/{id}", async () => {
+    const ended = { ...SAMPLE_SESSION, ended_at: "2026-07-11T13:00:00Z" };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(ended), { status: 200 }));
+    const result = await updateSkateSession("sess-1", { ended_at: "2026-07-11T13:00:00Z" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.ended_at).toBe("2026-07-11T13:00:00Z");
+    }
+    expect(fetchMock.mock.calls[0][0]).toContain("/api/v1/sessions/sess-1");
+    expect(fetchMock.mock.calls[0][1].method).toBe("PATCH");
   });
 });

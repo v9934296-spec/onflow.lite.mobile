@@ -22,7 +22,9 @@ vi.mock("@react-native-async-storage/async-storage", () => {
 import {
   clearActiveSessionId,
   loadActiveSessionId,
+  loadLastRecapSessionId,
   saveActiveSessionId,
+  saveLastRecapSessionId,
 } from "../activeSessionStore";
 
 describe("activeSessionStore", () => {
@@ -48,5 +50,10 @@ describe("activeSessionStore", () => {
   it("ignores blank session ids", async () => {
     await saveActiveSessionId("   ");
     expect(await loadActiveSessionId()).toBeNull();
+  });
+
+  it("saves and loads last recap session id", async () => {
+    await saveLastRecapSessionId("recap-sess");
+    expect(await loadLastRecapSessionId()).toBe("recap-sess");
   });
 });
