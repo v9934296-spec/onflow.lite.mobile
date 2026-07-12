@@ -42,6 +42,32 @@ export default function Analyzing() {
       ]
     : LOCAL_STEPS;
 
+  const clearPersistedJob = async (clearState: boolean): Promise<boolean> => {
+    if (user?.user_id) {
+      const result = await clearPendingAnalysisJob(user.user_id);
+      if (!result.ok) {
+        setPollError(result.error);
+        setCanRetry(true);
+        return false;
+      }
+    }
+    if (clearState) setPendingClipJobId(null);
+    return true;
+  };
+
+  const discardAndCaptureAgain = async () => {
+    const cleared = await clearPersistedJob(true);
+    if (!cleared) return;
+    setAnalysis(null);
+    router.replace("/capture");
+  };
+
+  const leaveTerminalFailure = (destination: "/" | "/capture") => {
+    setPendingClipJobId(null);
+    setAnalysis(null);
+    router.replace(destination);
+  };
+
   useEffect(() => {
     setStep(0);
   }, [analysis, pendingClipJobId]);
@@ -55,11 +81,6 @@ export default function Analyzing() {
     setPollError(null);
     setCanRetry(false);
 
-    const clearPersistedJob = async () => {
-      if (user?.user_id) await clearPendingAnalysisJob(user.user_id);
-      setPendingClipJobId(null);
-    };
-
     const run = async () => {
       const res = await pollClipJobUntilDone(pendingClipJobId, {
         signal: controller.signal,
@@ -71,23 +92,26 @@ export default function Analyzing() {
       if (cancelled || controller.signal.aborted) return;
 
       if (!res.ok) {
-        const retryable = res.error.kind === "timeout" || res.error.kind === "network" || res.error.kind === "server";
+        const retryable =
+          res.error.kind === "timeout" ||
+          res.error.kind === "network" ||
+          res.error.kind === "server";
         setCanRetry(retryable);
         setPollError(res.error.message);
-        if (!retryable) await clearPersistedJob();
+        if (!retryable) await clearPersistedJob(false);
         return;
       }
 
       if (res.data.status === "failed") {
         setPollError(res.data.failure_reason);
         setCanRetry(false);
-        await clearPersistedJob();
+        await clearPersistedJob(false);
         return;
       }
 
       if (res.data.status === "completed") {
         setAnalysis(mapClipJobToAnalysis(res.data, trick));
-        await clearPersistedJob();
+        await clearPersistedJob(true);
       }
     };
 
@@ -126,17 +150,31 @@ export default function Analyzing() {
         <View style={s.errorBlock}>
           <Text style={s.error}>{pollError}</Text>
           {canRetry ? (
-            <Btn
-              label="Retry analysis check"
-              onPress={() => {
-                setPollError(null);
-                setRetryNonce((value) => value + 1);
-              }}
-            />
+            <>
+              <Btn
+                label="Retry analysis check"
+                onPress={() => {
+                  setPollError(null);
+                  setRetryNonce((value) => value + 1);
+                }}
+              />
+              <Btn
+                label="Discard and re-film"
+                variant="red"
+                onPress={() => void discardAndCaptureAgain()}
+              />
+              <Btn label="Back home" variant="ghost" onPress={() => router.replace("/")} />
+            </>
           ) : (
-            <Btn label="Back to capture" onPress={() => router.replace("/capture")} />
+            <>
+              <Btn label="Back to capture" onPress={() => leaveTerminalFailure("/capture")} />
+              <Btn
+                label="Back home"
+                variant="ghost"
+                onPress={() => leaveTerminalFailure("/")}
+              />
+            </>
           )}
-          <Btn label="Back home" variant="ghost" onPress={() => router.replace("/")} />
         </View>
       ) : (
         <View style={{ gap: 14, marginTop: 20 }}>
