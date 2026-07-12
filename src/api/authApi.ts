@@ -31,6 +31,10 @@ export function parseAccountMe(raw: unknown): AccountMe | null {
         ? o.theme_preference
         : undefined,
     consent: parseConsentStatus(o.consent),
+    bonus_analyses_remaining:
+      typeof o.bonus_analyses_remaining === "number" ? o.bonus_analyses_remaining : null,
+    monthly_free_remaining:
+      typeof o.monthly_free_remaining === "number" ? o.monthly_free_remaining : null,
   };
 }
 

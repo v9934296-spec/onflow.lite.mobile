@@ -28,12 +28,15 @@ describe("parseAccountMe", () => {
       email: "skater@example.com",
       tier: "free",
       profile_image_url: null,
+      theme_preference: undefined,
       consent: {
         granted: true,
         granted_at: "2026-01-01",
         copy_version: "v1",
         source: "app",
       },
+      bonus_analyses_remaining: null,
+      monthly_free_remaining: null,
     });
   });
 
@@ -55,12 +58,15 @@ describe("parseAccountMe", () => {
       email: "",
       tier: "free",
       profile_image_url: null,
+      theme_preference: undefined,
       consent: {
         granted: false,
         granted_at: null,
         copy_version: null,
         source: null,
       },
+      bonus_analyses_remaining: null,
+      monthly_free_remaining: null,
     });
   });
 });

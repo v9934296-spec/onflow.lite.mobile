@@ -33,6 +33,8 @@ export {
   uploadClipToSession,
 } from "./clipApi";
 export { fetchClipJob } from "./jobApi";
+export { fetchFeed, parseFeedEvent, parseFeedResponse } from "./feedApi";
+export { syncBillingToBackend } from "./billingApi";
 export { parseClipJob, type ClipJob, type ClipJobStatus } from "./types/clipJob";
 export {
   DEFAULT_REQUEST_TIMEOUT_MS,

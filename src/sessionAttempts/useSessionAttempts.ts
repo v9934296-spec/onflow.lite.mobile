@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { track } from "../analytics";
+import { hapticLand, hapticMiss } from "../haptics";
 import { appendSessionAttempt, loadSessionAttempts } from "./sessionAttemptStore";
 import {
   buildSessionAttempt,
@@ -85,6 +86,8 @@ export function useSessionAttempts(sessionId: string | null): UseSessionAttempts
           trick_id: trick.trickId,
           outcome,
         });
+        if (outcome === "landed") void hapticLand();
+        else void hapticMiss();
         return true;
       } catch (error) {
         setAttempts(previous);

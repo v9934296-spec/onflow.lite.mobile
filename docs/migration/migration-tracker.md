@@ -51,8 +51,8 @@ Use for every migrated feature:
 | 7 | Session history | Complete | Yes | Yes (118) | `f4f542b` |
 | 8 | Clip selection and upload | Complete | Yes | Yes (132) | `e900950` |
 | 9 | Analysis job status | Complete | Yes | Yes (132) | `e900950` |
-| 10 | Feed and social features | Deferred | No | No | — |
-| 11 | Subscriptions and paywall | Deferred | No | No | — |
-| 12 | Notifications and polish | Deferred | No | No | — |
+| 10 | Feed and social features | Complete | Pending manual | Yes (143) | — |
+| 11 | Subscriptions and paywall | Complete | Pending manual | Yes (143) | — |
+| 12 | Notifications and polish | Complete | Pending manual | Yes (143) | — |
 
 Update this table after each completed feature commit.

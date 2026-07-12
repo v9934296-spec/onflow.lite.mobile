@@ -12,6 +12,8 @@ export type AccountMe = {
   profile_image_url: string | null;
   theme_preference?: "system" | "light" | "dark";
   consent: ConsentStatus;
+  bonus_analyses_remaining?: number | null;
+  monthly_free_remaining?: number | null;
 };
 
 export type AuthSignInResult = {

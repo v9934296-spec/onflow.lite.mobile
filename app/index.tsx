@@ -235,6 +235,8 @@ export default function Home() {
           variant="ghost"
           onPress={() => router.push("/history")}
         />
+        <Btn label="Feed" variant="ghost" onPress={() => router.push("/feed")} />
+        <Btn label="Settings" variant="ghost" onPress={() => router.push("/settings")} />
         <Btn
           label={`Session log${log.length > 0 ? ` · ${log.length}` : ""}`}
           variant="ghost"

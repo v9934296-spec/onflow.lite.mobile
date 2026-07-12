@@ -6,6 +6,7 @@ import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { track } from "../src/analytics";
 import { uploadClipToSession } from "../src/api/clipApi";
+import { isQuotaExceededMessage, PAYWALL_ROUTE } from "../src/billing/quota";
 import { C, F } from "../src/theme";
 import { Btn, Eyebrow } from "../src/ui";
 import { SAMPLE_CLIPS, analyzeSample, analyzeUserClip } from "../src/engine";
@@ -16,6 +17,13 @@ import { useSession } from "../src/session";
 function resolveMimeType(asset: ImagePicker.ImagePickerAsset): string {
   if (asset.mimeType === "video/quicktime") return "video/quicktime";
   return "video/mp4";
+}
+
+class QuotaExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "QuotaExceededError";
+  }
 }
 
 export default function Capture() {
@@ -74,6 +82,9 @@ export default function Capture() {
     });
 
     if (!uploaded.ok) {
+      if (isQuotaExceededMessage(uploaded.error.message)) {
+        throw new QuotaExceededError(uploaded.error.message);
+      }
       throw new Error(uploaded.error.message);
     }
 
@@ -130,6 +141,13 @@ export default function Capture() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown capture error";
       track("capture_failed", { source: fromCamera ? "camera" : "library", message });
+      if (error instanceof QuotaExceededError) {
+        Alert.alert("Analysis limit reached", message, [
+          { text: "Not now", style: "cancel" },
+          { text: "View upgrade", onPress: () => router.push(PAYWALL_ROUTE) },
+        ]);
+        return;
+      }
       Alert.alert("Couldn't upload the clip", message);
     } finally {
       setBusy(false);
