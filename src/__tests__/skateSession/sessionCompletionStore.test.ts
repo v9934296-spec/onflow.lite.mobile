@@ -69,4 +69,35 @@ describe("sessionCompletionStore", () => {
     expect(result.data).toBeNull();
     expect(result.loadError).toBeDefined();
   });
+
+  it("refuses a journal whose recap belongs to a different session", async () => {
+    const result = await savePendingSessionCompletion("user-a", {
+      ...PENDING,
+      recap: { ...PENDING.recap, session_id: "session-2" },
+    });
+    expect(result.ok).toBe(false);
+    expect(store.size).toBe(0);
+  });
+
+  it("refuses a journal whose end time differs from the recap", async () => {
+    const result = await savePendingSessionCompletion("user-a", {
+      ...PENDING,
+      endedAt: "2026-07-11T12:11:00.000Z",
+    });
+    expect(result.ok).toBe(false);
+    expect(store.size).toBe(0);
+  });
+
+  it("rejects a persisted journal with inconsistent nested counts", async () => {
+    store.set(
+      "onflow.user.user-a.pendingSessionCompletion.v1",
+      JSON.stringify({
+        ...PENDING,
+        recap: { ...PENDING.recap, attempts_count: 3 },
+      }),
+    );
+    const result = await loadPendingSessionCompletion("user-a");
+    expect(result.data).toBeNull();
+    expect(result.loadError).toBeDefined();
+  });
 });
