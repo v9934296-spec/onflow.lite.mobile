@@ -17,6 +17,13 @@ export {
   setAuthTokenProvider,
 } from "./auth";
 export { apiRequest, safeReadJson } from "./client";
+export {
+  createEmailSession,
+  fetchAccountMe,
+  parseAccountMe,
+  signInWithApple,
+  signInWithGoogle,
+} from "./authApi";
 export { checkHealth, parseHealthResponse } from "./health";
 export {
   DEFAULT_REQUEST_TIMEOUT_MS,

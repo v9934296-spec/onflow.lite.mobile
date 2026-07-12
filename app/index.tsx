@@ -3,6 +3,8 @@ import { View, Text, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
+import { useAccount } from "../src/auth/accountContext";
+import { useAuth } from "../src/auth/authContext";
 import { getBestTrickStreak, getLast7Days } from "../src/progress";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow, WeekRow } from "../src/ui";
@@ -11,6 +13,8 @@ import { useSession } from "../src/session";
 export default function Home() {
   const router = useRouter();
   const { log, attempts, resetLoop } = useSession();
+  const { user } = useAccount();
+  const { signOut } = useAuth();
   const insets = useSafeAreaInsets();
   const week = getLast7Days(attempts);
   const bestStreak = getBestTrickStreak(attempts);
@@ -32,6 +36,11 @@ export default function Home() {
         <Text style={s.sub}>
           One clip in, honest feedback out. No fake numbers — if we can't see it, we say so.
         </Text>
+        {user?.email ? (
+          <Text style={s.signedInAs}>
+            Signed in as <Text style={{ color: C.offwhite, fontFamily: F.bold }}>{user.email}</Text>
+          </Text>
+        ) : null}
       </View>
 
       {attempts.length > 0 && (
@@ -64,6 +73,7 @@ export default function Home() {
             router.push("/log");
           }}
         />
+        <Btn label="Sign out" variant="ghost" onPress={() => void signOut()} />
       </View>
     </View>
   );
@@ -74,5 +84,6 @@ const s = StyleSheet.create({
   hero: { flex: 1, justifyContent: "center", gap: 10 },
   h1: { fontFamily: F.heading, fontSize: 40, lineHeight: 44, color: C.offwhite },
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
+  signedInAs: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 4 },
   streak: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 4 },
 });

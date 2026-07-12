@@ -11,6 +11,8 @@ import { View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { checkHealth, guardApiBaseUrlAtStartup } from "../src/api";
+import { AccountProvider } from "../src/auth/accountContext";
+import { AuthProvider } from "../src/auth/authContext";
 import { ApiConfigBanner } from "../src/components/ApiConfigBanner";
 import { SessionProvider, useSession } from "../src/session";
 import { StorageWarningBanner } from "../src/ui";
@@ -98,7 +100,11 @@ export default function Layout() {
 
   return (
     <SessionProvider>
-      <RootLayout />
+      <AccountProvider>
+        <AuthProvider>
+          <RootLayout />
+        </AuthProvider>
+      </AccountProvider>
     </SessionProvider>
   );
 }
