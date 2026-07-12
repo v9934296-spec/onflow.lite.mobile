@@ -5,6 +5,8 @@ export type AnalyticsEvent =
   | "session_attempt_logged"
   | "session_ended"
   | "session_recap_viewed"
+  | "session_history_viewed"
+  | "session_history_opened"
   | "capture_completed"
   | "capture_failed"
   | "land_reported"

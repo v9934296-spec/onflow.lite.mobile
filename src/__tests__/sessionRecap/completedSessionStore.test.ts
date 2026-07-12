@@ -22,12 +22,13 @@ vi.mock("@react-native-async-storage/async-storage", () => {
 import { buildSessionRecap } from "../../sessionRecap/buildSessionRecap";
 import {
   loadCompletedSessionRecap,
+  listCompletedSessionRecaps,
   saveCompletedSessionRecap,
 } from "../../sessionRecap/completedSessionStore";
 import type { SkateSession } from "../../types/api/session";
 
 const SESSION: SkateSession = {
-  id: "sess-1",
+  id: "sess-load",
   user_id: "user-1",
   spot_label: null,
   focus_trick: null,
@@ -48,8 +49,26 @@ describe("completedSessionStore", () => {
     const save = await saveCompletedSessionRecap(recap);
     expect(save.ok).toBe(true);
 
-    const loaded = await loadCompletedSessionRecap("sess-1");
-    expect(loaded.data?.session_id).toBe("sess-1");
+    const loaded = await loadCompletedSessionRecap("sess-load");
+    expect(loaded.data?.session_id).toBe("sess-load");
     expect(loaded.data?.attempts_count).toBe(0);
+  });
+
+  it("lists recaps newest ended first", async () => {
+    const older = buildSessionRecap(
+      { ...SESSION, id: "sess-old" },
+      [],
+      "2026-07-10T12:00:00.000Z",
+    );
+    const newer = buildSessionRecap(
+      { ...SESSION, id: "sess-new" },
+      [],
+      "2026-07-12T12:00:00.000Z",
+    );
+    await saveCompletedSessionRecap(older);
+    await saveCompletedSessionRecap(newer);
+
+    const listed = await listCompletedSessionRecaps();
+    expect(listed.data[0]?.session_id).toBe("sess-new");
   });
 });
