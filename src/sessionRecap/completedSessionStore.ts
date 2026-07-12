@@ -55,11 +55,43 @@ export function isSessionRecap(value: unknown): value is SessionRecap {
     return false;
   }
 
-  if (Date.parse(o.ended_at) < Date.parse(o.started_at)) return false;
-  if (o.duration_seconds !== null && !(typeof o.duration_seconds === "number" && Number.isFinite(o.duration_seconds) && o.duration_seconds >= 0)) {
+  const rows = o.trick_breakdown as SessionRecapTrickRow[];
+  const rowTotals = rows.reduce(
+    (sum, row) => ({
+      total: sum.total + row.total,
+      landed: sum.landed + row.landed,
+      missed: sum.missed + row.missed,
+    }),
+    { total: 0, landed: 0, missed: 0 },
+  );
+  if (
+    rowTotals.total !== o.attempts_count ||
+    rowTotals.landed !== o.landed_count ||
+    rowTotals.missed !== o.missed_count
+  ) {
     return false;
   }
-  if (o.landed_rate !== null && !(typeof o.landed_rate === "number" && Number.isFinite(o.landed_rate) && o.landed_rate >= 0 && o.landed_rate <= 1)) {
+
+  if (Date.parse(o.ended_at) < Date.parse(o.started_at)) return false;
+  if (
+    o.duration_seconds !== null &&
+    !(
+      typeof o.duration_seconds === "number" &&
+      Number.isFinite(o.duration_seconds) &&
+      o.duration_seconds >= 0
+    )
+  ) {
+    return false;
+  }
+  if (
+    o.landed_rate !== null &&
+    !(
+      typeof o.landed_rate === "number" &&
+      Number.isFinite(o.landed_rate) &&
+      o.landed_rate >= 0 &&
+      o.landed_rate <= 1
+    )
+  ) {
     return false;
   }
   return true;
