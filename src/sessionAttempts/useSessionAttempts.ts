@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+
 import { track } from "../analytics";
+import { useAccount } from "../auth/accountContext";
 import { hapticLand, hapticMiss } from "../haptics";
-import { appendSessionAttempt, loadSessionAttempts } from "./sessionAttemptStore";
+import type { SelectedTrick } from "../tricks/types";
 import {
   buildSessionAttempt,
   summarizeSessionAttempts,
@@ -9,7 +11,7 @@ import {
   type SessionAttemptCounts,
   type SessionAttemptOutcome,
 } from "../types/sessionAttempt";
-import type { SelectedTrick } from "../tricks/types";
+import { appendSessionAttempt, loadSessionAttempts } from "./sessionAttemptStore";
 
 interface UseSessionAttemptsResult {
   attempts: SessionAttempt[];
@@ -22,6 +24,8 @@ interface UseSessionAttemptsResult {
 }
 
 export function useSessionAttempts(sessionId: string | null): UseSessionAttemptsResult {
+  const { user } = useAccount();
+  const userId = user?.user_id ?? null;
   const [attempts, setAttempts] = useState<SessionAttempt[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -33,14 +37,14 @@ export function useSessionAttempts(sessionId: string | null): UseSessionAttempts
     setIsHydrated(false);
     setSubmitError(null);
 
-    if (!sessionId) {
+    if (!userId || !sessionId) {
       setAttempts([]);
       setIsHydrated(true);
       return;
     }
 
     void (async () => {
-      const result = await loadSessionAttempts(sessionId);
+      const result = await loadSessionAttempts(userId, sessionId);
       if (cancelled) return;
       setAttempts(result.data);
       setIsHydrated(true);
@@ -50,13 +54,13 @@ export function useSessionAttempts(sessionId: string | null): UseSessionAttempts
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, userId]);
 
   const dismissSubmitError = useCallback(() => setSubmitError(null), []);
 
   const logAttempt = useCallback(
     async (trick: SelectedTrick, outcome: SessionAttemptOutcome): Promise<boolean> => {
-      if (!sessionId || submitLock.current || isSubmitting) return false;
+      if (!userId || !sessionId || submitLock.current || isSubmitting) return false;
 
       submitLock.current = true;
       setIsSubmitting(true);
@@ -74,7 +78,7 @@ export function useSessionAttempts(sessionId: string | null): UseSessionAttempts
       setAttempts(optimistic);
 
       try {
-        const result = await appendSessionAttempt(attempt);
+        const result = await appendSessionAttempt(userId, attempt);
         if (!result.ok) {
           setAttempts(previous);
           setSubmitError(result.error);
@@ -98,7 +102,7 @@ export function useSessionAttempts(sessionId: string | null): UseSessionAttempts
         setIsSubmitting(false);
       }
     },
-    [attempts, isSubmitting, sessionId],
+    [attempts, isSubmitting, sessionId, userId],
   );
 
   return {
