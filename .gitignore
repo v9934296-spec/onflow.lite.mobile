@@ -73,3 +73,11 @@ android/
 # Repomix AI bundle (regenerate locally; never commit — may echo env if misconfigured)
 repomix-output.xml
 repomix-output.md
+
+# Python (services/api)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+services/api/data/
+services/api/.venv/
+services/api/venv/

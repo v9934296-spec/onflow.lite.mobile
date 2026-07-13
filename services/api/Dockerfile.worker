@@ -1,0 +1,19 @@
+# ARQ worker for clip job processing.
+# Build from monorepo root: docker build -f services/api/Dockerfile.worker .
+# Wolfi base avoids unfixed perl CVEs in python:3.12-slim (Debian).
+FROM cgr.dev/chainguard/wolfi-base
+USER root
+WORKDIR /app
+RUN apk add --no-cache python-3.12 py3.12-pip ffmpeg
+COPY services/api/requirements.txt .
+RUN set -eux; \
+    for i in 1 2 3 4 5; do \
+        python3.12 -m pip install --no-cache-dir --retries 10 --timeout 120 --progress-bar off -r requirements.txt && break; \
+        echo "pip install failed, retrying ($i/5)..." >&2; \
+        sleep 5; \
+    done
+COPY services/api/app ./app
+ENV PYTHONPATH=/app
+RUN chown -R nonroot:nonroot /app
+USER nonroot
+CMD ["python3.12", "-m", "arq", "app.services.job_queue.WorkerSettings"]
