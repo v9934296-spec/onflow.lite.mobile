@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse, Response
 
-from app.core.auth import get_current_user, get_user_tier_for_beta
+from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.feature_gates import tier_has_feature
 from app.core.rate_limit import (
@@ -195,7 +195,7 @@ def get_account_quota(
     db = request.app.state.db
     repo = request.app.state.repo
     settings = get_settings()
-    tier = normalize_tier(get_user_tier_for_beta(user_id, db.get_user_tier(user_id)))
+    tier = normalize_tier(db.get_user_tier(user_id))
     user = db.get_user(user_id)
     subscription_status = (user.subscription_status or "active") if user else "active"
     trial_expires_at = user.trial_expires_at if user and tier == "trial" else None

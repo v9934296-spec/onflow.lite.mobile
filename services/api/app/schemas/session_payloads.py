@@ -9,10 +9,6 @@ from app.schemas.clips import SessionRecapPayload
 
 class SessionCreateRequest(BaseModel):
     email: str = Field(..., min_length=3, max_length=254)
-    invite_code: str | None = Field(
-        default=None,
-        description="Closed-beta invite code; when listed in ONFLOW_BETA_PRO_CODES, user tier is set to pro.",
-    )
 
 
 class SessionCreateResponse(BaseModel):

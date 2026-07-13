@@ -3,16 +3,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-import jwt as pyjwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core.auth import (
-    assert_optional_invite_code_valid,
-    claim_invite_code,
-    get_current_user,
-    is_beta_pro_code,
-)
+from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.rate_limit import (
     auth_invite_limit_per_hour,
@@ -38,15 +32,6 @@ def _consent_at_iso_to_dt(value: str | None) -> datetime | None:
         return None
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
-
-
-class ClaimRequest(BaseModel):
-    code: str
-
-
-class ClaimResponse(BaseModel):
-    token: str
-    user_id: str
 
 
 class ClipRetentionConsentRequest(BaseModel):
@@ -119,23 +104,6 @@ def set_clip_retention_consent_legacy(
     )
 
 
-@router.post("/claim", response_model=ClaimResponse)
-@limiter.limit(auth_invite_limit_per_hour, key_func=remote_ip_key)
-@limiter.limit(auth_invite_limit_per_minute, key_func=remote_ip_key)
-def claim_code(request: Request, body: ClaimRequest) -> ClaimResponse:
-    """Exchange an invite code for a JWT (or dev token)."""
-    db: IdentityRepository = request.app.state.db
-    token = claim_invite_code(body.code)
-    if token.startswith("dev:"):
-        user_id = token[4:]
-    else:
-        payload = pyjwt.decode(token, options={"verify_signature": False})
-        user_id = str(payload["sub"])
-    if is_beta_pro_code(body.code):
-        db.ensure_invite_claim_user(user_id, "pro")
-    return ClaimResponse(token=token, user_id=user_id)
-
-
 @router.post("/session", response_model=SessionCreateResponse)
 @limiter.limit(auth_invite_limit_per_hour, key_func=remote_ip_key)
 @limiter.limit(auth_invite_limit_per_minute, key_func=remote_ip_key)
@@ -150,7 +118,6 @@ def create_session(request: Request, body: SessionCreateRequest) -> SessionCreat
     if not email or "@" not in email:
         raise HTTPException(status_code=422, detail="Valid email is required.")
     existing_user = db.get_user_by_email_ci(email)
-    assert_optional_invite_code_valid(body.invite_code)
     try:
         user_id, token, norm = db.create_user_session(email)
     except ValueError as e:
@@ -163,8 +130,6 @@ def create_session(request: Request, body: SessionCreateRequest) -> SessionCreat
     logger.info("session created user_id=%s", user_id)
     if existing_user is None:
         db.initialize_trial_for_new_user(user_id)
-    if body.invite_code and body.invite_code.strip() and is_beta_pro_code(body.invite_code):
-        db.set_user_tier(user_id, "pro")
     log_beta("beta_sign_in_success", user_id=user_id)
     return SessionCreateResponse(
         user_id=user_id,

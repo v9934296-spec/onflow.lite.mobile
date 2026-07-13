@@ -43,16 +43,13 @@ class Settings(BaseSettings):
     # Database URL for clip jobs (Postgres in production). Empty = SQLite at database_path.
     database_url: str = ""
 
-    # Auth (JWT invite flow — see app/core/auth.py)
+    # Auth (JWT / OAuth — see app/core/auth.py)
     jwt_secret: str = ""
     jwt_expiry_hours: int = 720  # 30 days
     # Comma-separated Google OAuth client IDs (web + iOS) for ID token verification.
     google_client_ids: str = ""
     # Apple Sign In bundle id (aud claim); Railway: ONFLOW_APPLE_BUNDLE_ID
     apple_bundle_id: str = "skate.onflow.mobile"
-    beta_codes: str = ""  # comma-separated invite codes
-    # Subset of invite codes that grant Pro tier (SQLite users.tier = pro) for closed-beta testing.
-    beta_pro_codes: str = ""
 
     # Comma-separated operator emails auto-promoted to users.is_admin on sign-in.
     # Required in production/staging; admin routes check users.is_admin (see app/deps/admin.py).

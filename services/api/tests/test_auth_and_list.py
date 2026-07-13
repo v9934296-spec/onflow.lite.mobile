@@ -6,21 +6,9 @@ from fastapi.testclient import TestClient
 from tests.conftest import submit_clip_via_presigned, write_presigned_upload
 
 
-def test_claim_invalid_code_when_codes_configured(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("ONFLOW_DATABASE_PATH", str(tmp_path / "onflow.db"))
-    monkeypatch.setenv("ONFLOW_UPLOAD_DIR", str(tmp_path / "uploads"))
-    monkeypatch.setenv("ONFLOW_BETA_CODES", "grind-01")
-    import app.core.database as database_module
-
-    database_module._engine = None
-    from app.main import create_app
-
-    app = create_app()
-    with TestClient(app) as c:
-        r = c.post("/api/v1/auth/claim", json={"code": "wrong"})
-        assert r.status_code == 422
+def test_claim_endpoint_removed(client: TestClient) -> None:
+    r = client.post("/api/v1/auth/claim", json={"code": "grind-01"})
+    assert r.status_code == 404
 
 
 def test_clip_submission_monthly_quota_exceeded_returns_429(
@@ -86,55 +74,6 @@ def test_post_clips_401_without_bearer_when_jwt_secret_set(
             },
         )
         assert r.status_code == 401
-
-
-def test_claim_ok_when_codes_configured(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("ONFLOW_DATABASE_PATH", str(tmp_path / "onflow.db"))
-    monkeypatch.setenv("ONFLOW_UPLOAD_DIR", str(tmp_path / "uploads"))
-    monkeypatch.setenv("ONFLOW_BETA_CODES", "grind-01")
-    import app.core.database as database_module
-
-    database_module._engine = None
-    from app.main import create_app
-
-    app = create_app()
-    with TestClient(app) as c:
-        r = c.post("/api/v1/auth/claim", json={"code": "grind-01"})
-        assert r.status_code == 200
-        b = r.json()
-        assert b["token"].startswith("dev:")
-        assert len(b["user_id"]) == 16
-
-
-def test_session_with_invite_code_sets_pro_tier(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("ONFLOW_DATABASE_PATH", str(tmp_path / "onflow.db"))
-    monkeypatch.setenv("ONFLOW_UPLOAD_DIR", str(tmp_path / "uploads"))
-    monkeypatch.setenv("ONFLOW_BETA_CODES", "flow1-12,other")
-    monkeypatch.setenv("ONFLOW_BETA_PRO_CODES", "flow1-12")
-    import app.core.database as database_module
-
-    database_module._engine = None
-    from app.main import create_app
-
-    app = create_app()
-    with TestClient(app) as c:
-        r = c.post(
-            "/api/v1/auth/session",
-            json={"email": "pro-tester@onflow.test", "invite_code": "flow1-12"},
-        )
-        assert r.status_code == 200
-        uid = r.json()["user_id"]
-        q = c.get(
-            "/api/v1/account/quota",
-            headers={"Authorization": f"Bearer {r.json()['session_token']}"},
-        )
-        assert q.status_code == 200
-        assert q.json()["tier"] == "pro"
-        assert q.json()["monthly_free_remaining"] is None
 
 
 def test_session_returns_token(client: TestClient) -> None:

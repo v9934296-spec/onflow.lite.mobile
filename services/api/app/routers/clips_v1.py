@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
-from app.core.auth import get_current_user, get_user_tier_for_beta
+from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.core.feature_gates import tier_has_feature
 from app.core.tiers import normalize_tier
@@ -36,7 +36,7 @@ _TRIAL_ENDED_UPLOAD_MESSAGE = (
 
 def _require_upload_feature(request: Request, user_id: str) -> None:
     db = request.app.state.db
-    tier = normalize_tier(get_user_tier_for_beta(user_id, db.get_user_tier(user_id)))
+    tier = normalize_tier(db.get_user_tier(user_id))
     if not tier_has_feature(tier, "upload_clip"):
         raise HTTPException(status_code=403, detail=_TRIAL_ENDED_UPLOAD_MESSAGE)
 

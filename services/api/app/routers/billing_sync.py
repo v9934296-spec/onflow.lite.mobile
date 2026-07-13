@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
-from app.core.auth import get_current_user, get_user_tier_for_beta
+from app.core.auth import get_current_user
 from app.core.tiers import normalize_tier, tier_has_unlimited_analyses
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def sync_billing(
     repo = request.app.state.repo
     settings = request.app.state.settings
 
-    current_tier = normalize_tier(get_user_tier_for_beta(user_id, db.get_user_tier(user_id)))
+    current_tier = normalize_tier(db.get_user_tier(user_id))
 
     # Linking the RC customer id is safe — it does not change the tier (we write the
     # already-current tier) and lets future webhooks resolve this user. Only link when

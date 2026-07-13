@@ -12,12 +12,15 @@ from app.core.admin import promote_admin_if_eligible
 from app.models import (
     BetaFeedbackModel,
     ClientFunnelEventModel,
+    ClipModel,
     ConsentEventModel,
     CustomLineModel,
+    FeedEventModel,
     LineAttemptModel,
     MilestoneModel,
     RcWebhookDedupModel,
     SessionModel,
+    SkateSessionModel,
     TrickStatModel,
     UserModel,
 )
@@ -640,6 +643,14 @@ class IdentityRepository:
     def purge_user_owned_rows(self, user_id: str) -> None:
         """Remove user-owned rows except users and consent_events."""
         with self._sf() as session:
+            for row in session.exec(select(FeedEventModel).where(FeedEventModel.user_id == user_id)):
+                session.delete(row)
+            for row in session.exec(select(ClipModel).where(ClipModel.user_id == user_id)):
+                session.delete(row)
+            for row in session.exec(
+                select(SkateSessionModel).where(SkateSessionModel.user_id == user_id)
+            ):
+                session.delete(row)
             for row in session.exec(select(TrickStatModel).where(TrickStatModel.user_id == user_id)):
                 session.delete(row)
             for row in session.exec(select(MilestoneModel).where(MilestoneModel.user_id == user_id)):

@@ -58,3 +58,67 @@ def test_delete_account_invalidates_jwt(
         assert dr.status_code == 202
         mr = c.get("/api/v1/account/me", headers=headers)
         assert mr.status_code == 401
+
+
+def test_delete_account_purges_v1_clips_sessions_feed(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    from datetime import datetime, timezone
+
+    from sqlmodel import Session, select
+
+    from app.core.database import get_engine
+    from app.models import ClipModel, FeedEventModel, SkateSessionModel
+
+    me = client.get("/api/v1/account/me", headers=auth_headers)
+    assert me.status_code == 200
+    user_id = me.json()["user_id"]
+    now = datetime.now(timezone.utc)
+
+    with Session(get_engine()) as db:
+        session_row = SkateSessionModel(
+            id="sess-del-1",
+            user_id=user_id,
+            started_at=now,
+            ended_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        clip_row = ClipModel(
+            id="clip-del-1",
+            user_id=user_id,
+            session_id="sess-del-1",
+            storage_key="clips/clip-del-1.mp4",
+            storage_url="",
+            upload_status="analyzed",
+            created_at=now,
+            updated_at=now,
+        )
+        feed_row = FeedEventModel(
+            id="feed-del-1",
+            user_id=user_id,
+            event_type="session_recap",
+            event_version="v1",
+            skate_session_id="sess-del-1",
+            payload_json="{}",
+            generated_at=now,
+            propagates_at=now,
+            propagation_status="propagated",
+        )
+        db.add(session_row)
+        db.add(clip_row)
+        db.add(feed_row)
+        db.commit()
+
+    r = client.delete("/api/v1/account", headers=auth_headers)
+    assert r.status_code == 202, r.text
+
+    with Session(get_engine()) as db:
+        assert db.exec(select(ClipModel).where(ClipModel.user_id == user_id)).first() is None
+        assert (
+            db.exec(select(SkateSessionModel).where(SkateSessionModel.user_id == user_id)).first()
+            is None
+        )
+        assert (
+            db.exec(select(FeedEventModel).where(FeedEventModel.user_id == user_id)).first() is None
+        )

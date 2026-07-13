@@ -53,13 +53,16 @@ def _session_headers(c: TestClient) -> dict[str, str]:
 
 
 def test_auth_claim_rate_limited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Invite claim was removed; session auth still shares the invite IP rate-limit helpers."""
     monkeypatch.setenv("ONFLOW_AUTH_RATE_LIMIT_PER_MINUTE", "2")
     monkeypatch.setenv("ONFLOW_AUTH_RATE_LIMIT_PER_HOUR", "100")
     with _app_client(tmp_path, monkeypatch) as c:
-        for _ in range(2):
-            r = c.post("/api/v1/auth/claim", json={"code": "ANYCODEHERE"})
+        r = c.post("/api/v1/auth/claim", json={"code": "ANYCODEHERE"})
+        assert r.status_code == 404
+        for i in range(2):
+            r = c.post("/api/v1/auth/session", json={"email": f"claim-rl-{i}@t.com"})
             assert r.status_code == 200, r.text
-        r3 = c.post("/api/v1/auth/claim", json={"code": "ANYCODEHERE"})
+        r3 = c.post("/api/v1/auth/session", json={"email": "claim-rl-3@t.com"})
         assert r3.status_code == 429
 
 

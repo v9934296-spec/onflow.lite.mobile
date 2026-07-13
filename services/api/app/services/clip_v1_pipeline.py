@@ -7,7 +7,6 @@ from typing import Any
 from fastapi import HTTPException, Request
 from sqlmodel import Session
 
-from app.core.auth import get_user_tier_for_beta
 from app.core.config import get_settings
 from app.core.tiers import normalize_tier
 from app.domain.clip_job import ClipJobRecord
@@ -136,7 +135,7 @@ async def complete_v1_clip_upload(
         repo.create(record)
     else:
         # Retry of an already-charged job — recompute tier but never re-charge quota.
-        tier_norm = normalize_tier(get_user_tier_for_beta(user_id, identity.get_user_tier(user_id)))
+        tier_norm = normalize_tier(identity.get_user_tier(user_id))
         existing_job.with_status("pending")
         existing_job.failure_reason = None
         existing_job.result_json = None

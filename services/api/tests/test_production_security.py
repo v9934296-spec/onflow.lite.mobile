@@ -165,7 +165,7 @@ def test_production_issue_onflow_access_token_never_dev_prefix(
     assert token.count(".") == 2
 
 
-def test_production_claim_invite_never_dev_prefix(
+def test_production_claim_invite_removed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("ONFLOW_ENV", "production")
@@ -182,7 +182,6 @@ def test_production_claim_invite_never_dev_prefix(
         "ONFLOW_DATABASE_URL", f"sqlite:///{(tmp_path / 'claim.db').as_posix()}"
     )
     monkeypatch.setenv("ONFLOW_UPLOAD_DIR", str(tmp_path / "up"))
-    monkeypatch.setenv("ONFLOW_BETA_CODES", "grind-01")
     import app.core.database as database_module
 
     database_module._engine = None
@@ -190,10 +189,7 @@ def test_production_claim_invite_never_dev_prefix(
 
     with TestClient(create_app()) as c:
         r = c.post("/api/v1/auth/claim", json={"code": "grind-01"})
-        assert r.status_code == 200
-        tok = r.json()["token"]
-        assert not tok.startswith("dev:")
-        assert tok.count(".") == 2
+        assert r.status_code == 404
 
 
 def test_production_requires_database_url(monkeypatch: pytest.MonkeyPatch) -> None:

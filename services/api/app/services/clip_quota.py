@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Request
 
-from app.core.auth import get_user_tier_for_beta
 from app.core.config import get_settings
 from app.core.tiers import normalize_tier, tier_has_unlimited_analyses
 from app.repositories.clip_jobs import ClipJobRepository
@@ -22,7 +21,7 @@ def reserve_clip_submission(request: Request, user_id: str) -> tuple[str, str | 
     db: IdentityRepository = request.app.state.db
     repo: ClipJobRepository = request.app.state.repo
 
-    tier = normalize_tier(get_user_tier_for_beta(user_id, db.get_user_tier(user_id)))
+    tier = normalize_tier(db.get_user_tier(user_id))
     if tier_has_unlimited_analyses(tier):
         return tier, "unlimited"
 

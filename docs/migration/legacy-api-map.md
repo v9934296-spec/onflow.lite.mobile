@@ -44,8 +44,8 @@ Contract reference: `c:\ai-pop\apps\docs\API_CONTRACT.md`
 
 | Variable | Phase | Notes |
 |----------|-------|-------|
-| `EXPO_PUBLIC_BETA_CODES` | 2 | Invite codes |
-| `EXPO_PUBLIC_BETA_PRO_CODES` | 11 | Pro tester codes |
+| `EXPO_PUBLIC_BETA_CODES` | — | Removed (invite codes retired) |
+| `EXPO_PUBLIC_BETA_PRO_CODES` | — | Removed (invite codes retired) |
 | `EXPO_PUBLIC_RC_API_KEY_*` | 11 | RevenueCat |
 | `EXPO_PUBLIC_LEGAL_BASE_URL` | 12 | Legal links |
 | `EXPO_PUBLIC_DEV_SKIP_SIGN_IN` | 2 | Dev auto-session |
@@ -133,7 +133,7 @@ Require `status` only in mobile parser; other fields optional diagnostics.
 | POST | `/api/v1/auth/google` |
 | POST | `/api/v1/auth/apple` |
 | POST | `/api/v1/auth/session` |
-| POST | `/api/v1/auth/claim` |
+| POST | `/api/v1/auth/claim` | Removed — invite codes retired |
 | GET | `/api/v1/account/me` |
 | DELETE | `/api/v1/account` |
 | GET | `/api/v1/consent` |
