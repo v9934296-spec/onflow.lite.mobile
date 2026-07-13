@@ -38,7 +38,6 @@ export default function SignInScreen() {
   const { completeSignIn } = useAuth();
 
   const [email, setEmail] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
@@ -105,7 +104,7 @@ export default function SignInScreen() {
     setError(null);
     setBusy(true);
     try {
-      const result = await createEmailSession(email, inviteCode || undefined);
+      const result = await createEmailSession(email);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
@@ -115,7 +114,7 @@ export default function SignInScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, email, inviteCode, finishSignIn]);
+  }, [busy, email, finishSignIn]);
 
   const showAndroidNotice = !IS_IOS && !ENABLE_EMAIL_AUTH;
 
@@ -168,14 +167,6 @@ export default function SignInScreen() {
               keyboardType="email-address"
               autoComplete="email"
               placeholder="you@example.com"
-              editable={!busy}
-            />
-            <Field
-              label="Invite code (optional)"
-              value={inviteCode}
-              onChangeText={setInviteCode}
-              autoCapitalize="characters"
-              placeholder="grind-01"
               editable={!busy}
             />
             <Btn label="Continue with email" onPress={() => void handleEmail()} disabled={busy} />
