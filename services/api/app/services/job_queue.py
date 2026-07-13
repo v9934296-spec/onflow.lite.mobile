@@ -136,8 +136,8 @@ class WorkerSettings:
     max_tries = 2
     retry_delay = 5
 
-    @staticmethod
-    def redis_settings():
+    @property
+    def redis_settings(self):
         from arq.connections import RedisSettings
 
         settings = get_settings()
