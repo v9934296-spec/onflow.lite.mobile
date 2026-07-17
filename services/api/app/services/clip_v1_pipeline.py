@@ -82,6 +82,27 @@ async def complete_v1_clip_upload(
             detail="Upload not found at storage key — confirm the client PUT succeeded.",
         )
 
+    # Server-side upload verification (Group 5): the client's declared size_bytes at
+    # initiate is untrusted. Measure the real object before charging quota or enqueuing
+    # analysis, and delete anything we reject so storage can't be used as a dumping
+    # ground. Server-measured size replaces the client claim on the clip row.
+    actual_size = await storage.size(clip.storage_key)
+    if actual_size is None or actual_size <= 0:
+        await storage.delete(clip.storage_key)
+        raise HTTPException(
+            status_code=422,
+            detail="Uploaded file is empty or unreadable — re-record and upload again.",
+        )
+    max_upload_bytes = get_settings().clip_max_upload_bytes
+    if max_upload_bytes > 0 and actual_size > max_upload_bytes:
+        await storage.delete(clip.storage_key)
+        raise HTTPException(
+            status_code=413,
+            detail="Uploaded clip exceeds the maximum allowed size.",
+        )
+    if actual_size != clip.size_bytes:
+        clip.size_bytes = actual_size
+
     repo: ClipJobRepository = request.app.state.repo
     existing_job = repo.get(clip_id)
     if existing_job is not None and existing_job.status == "completed":

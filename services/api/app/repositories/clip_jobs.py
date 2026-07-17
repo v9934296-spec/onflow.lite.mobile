@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any, Protocol, runtime_checkable
 
@@ -36,6 +37,9 @@ class ClipJobRepository(Protocol):
     def get_for_user(self, job_id: str, user_id: str) -> ClipJobRecord | None: ...
     def list_for_user(self, user_id: str, *, limit: int) -> list[dict[str, Any]]: ...
     def list_full_for_user(self, user_id: str, *, limit: int) -> list[ClipJobRecord]: ...
+    def iter_all_for_user(
+        self, user_id: str, *, batch_size: int = 1000
+    ) -> Iterator[ClipJobRecord]: ...
     def list_storage_refs_for_user(self, user_id: str) -> list[tuple[str, str]]: ...
     def list_resumable(self) -> list[ClipJobRecord]: ...
     def count_monthly_free_jobs(self, user_id: str) -> int: ...
@@ -95,6 +99,15 @@ class InMemoryClipJobRepository:
         rows = [j for j in self._by_id.values() if j.user_id == user_id]
         rows.sort(key=lambda x: x.updated_at, reverse=True)
         return rows[:lim]
+
+    def iter_all_for_user(
+        self, user_id: str, *, batch_size: int = 1000
+    ) -> Iterator[ClipJobRecord]:
+        # Full, UNCAPPED export of a user's own rows (GDPR/CCPA completeness).
+        del batch_size  # in-memory has no query cost to batch
+        rows = [j for j in self._by_id.values() if j.user_id == user_id]
+        rows.sort(key=lambda x: x.updated_at, reverse=True)
+        yield from rows
 
     def list_storage_refs_for_user(self, user_id: str) -> list[tuple[str, str]]:
         return [
@@ -261,6 +274,30 @@ class SqlClipJobRepository:
             )
             rows = list(session.exec(stmt))
             return [self._to_record(m) for m in rows]
+
+    def iter_all_for_user(
+        self, user_id: str, *, batch_size: int = 1000
+    ) -> Iterator[ClipJobRecord]:
+        # Full, UNCAPPED export of a user's own rows (GDPR/CCPA completeness).
+        # Reads in bounded batches so a large history can't materialize the whole
+        # table at once. For a user whose history fits in one batch this issues a
+        # single SELECT (preserving the export endpoint's constant-query contract).
+        batch = max(1, batch_size)
+        offset = 0
+        while True:
+            with self._session_factory() as session:
+                stmt = (
+                    select(ClipJobModel)
+                    .where(ClipJobModel.user_id == user_id)
+                    .order_by(ClipJobModel.updated_at.desc(), ClipJobModel.id.desc())
+                    .offset(offset)
+                    .limit(batch)
+                )
+                records = [self._to_record(m) for m in session.exec(stmt)]
+            yield from records
+            if len(records) < batch:
+                break
+            offset += batch
 
     def list_storage_refs_for_user(self, user_id: str) -> list[tuple[str, str]]:
         with self._session_factory() as session:

@@ -7,6 +7,7 @@ import React, {
 } from "react";
 
 import { fetchAccountMe } from "../api/authApi";
+import { activateStorageForUser, setStorageUserId } from "../storage/userScope";
 import type { AccountMe } from "../types/api/account";
 
 type AccountContextValue = {
@@ -23,6 +24,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [accountLoading, setAccountLoading] = useState(false);
 
   const clearUser = useCallback(() => {
+    setStorageUserId(null);
     setUser(null);
   }, []);
 
@@ -31,9 +33,11 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     try {
       const result = await fetchAccountMe();
       if (!result.ok) {
+        setStorageUserId(null);
         setUser(null);
         return false;
       }
+      await activateStorageForUser(result.data.user_id);
       setUser(result.data);
       return true;
     } finally {

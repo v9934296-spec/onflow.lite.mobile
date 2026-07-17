@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
+from app.domain.clip_job import ClipJobRecord
 from tests.conftest import submit_clip_via_presigned
 
 
@@ -61,3 +64,37 @@ def test_export_includes_user_clips_only(
     assert er_b.status_code == 200
     clip_ids_b = {c["job_id"] for c in er_b.json()["clips"]}
     assert job_a not in clip_ids_b
+
+
+def test_export_is_not_truncated_beyond_legacy_cap(client: TestClient) -> None:
+    """A user with more clips than the old 100/500 cap must get ALL of them."""
+    headers = _headers_for_email(client, "export-bulk@onflow.test")
+    user_id = client.get("/api/v1/account/me", headers=headers).json()["user_id"]
+
+    repo = client.app.state.repo
+    seed_count = 230  # > legacy 100 repo cap and the old 500 request limit path
+    now = datetime.now(timezone.utc)
+    for i in range(seed_count):
+        ts = now - timedelta(minutes=i)
+        repo.create(
+            ClipJobRecord(
+                id=f"bulk-{i:04d}",
+                user_id=user_id,
+                status="completed",
+                created_at=ts,
+                updated_at=ts,
+                input_reference=f"storage:bulk/{i}.mp4",
+                failure_reason=None,
+                result_json={"summary": "ok"},
+                clip_label=f"clip-{i}",
+                tier="free",
+                clip_metadata=None,
+                quota_source="monthly",
+            )
+        )
+
+    r = client.get("/api/v1/account/export", headers=headers)
+    assert r.status_code == 200, r.text
+    exported = r.json()["clips"]
+    assert len(exported) == seed_count
+    assert len({c["job_id"] for c in exported}) == seed_count

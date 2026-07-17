@@ -214,6 +214,7 @@ def test_concurrent_processing_limit_returns_429(
 
 def test_production_settings_require_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONFLOW_ENV", "staging")
+    monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "k" * 32)
     monkeypatch.setenv("ONFLOW_DATABASE_URL", "postgresql://user:pass@localhost/onflow")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
@@ -229,6 +230,7 @@ def test_production_settings_require_redis_url(monkeypatch: pytest.MonkeyPatch) 
 
 def test_production_settings_reject_non_redis_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONFLOW_ENV", "production")
+    monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "k" * 32)
     monkeypatch.setenv("ONFLOW_DATABASE_URL", "postgresql://user:pass@localhost/onflow")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")

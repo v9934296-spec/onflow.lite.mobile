@@ -162,8 +162,11 @@ def export_my_data(
     u = db.get_user(user_id)
     if u is None:
         raise HTTPException(status_code=404, detail="User not found.")
-    # Single-query fetch — list_full_for_user replaces the previous
-    # list_for_user + per-row repo.get loop, which was a 1 + N query path.
+    # A data export must be COMPLETE (GDPR/CCPA): stream every one of the user's
+    # own rows in bounded batches rather than silently truncating. (The prior
+    # list_full_for_user(limit=500) call was additionally capped to 100 rows by
+    # the repository's safety guard, so users with >100 clips got a partial
+    # export.) For a history that fits in one batch this is still a single SELECT.
     jobs: list[dict] = [
         {
             "job_id": rec.id,
@@ -174,7 +177,7 @@ def export_my_data(
             "result": rec.result_json,
             "clip_metadata": rec.clip_metadata,
         }
-        for rec in repo.list_full_for_user(user_id, limit=500)
+        for rec in repo.iter_all_for_user(user_id)
     ]
     generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     return {

@@ -90,6 +90,67 @@ def test_complete_upload_409_when_already_analyzed(authed_client: TestClient) ->
     assert again.status_code == 409
 
 
+def test_complete_upload_422_when_object_empty(authed_client: TestClient) -> None:
+    """An empty/unreadable object is rejected, deleted, and never charges quota."""
+    initiated = _initiate(authed_client)
+    clip_id = initiated["clip_id"]
+    _write_local_upload(authed_client, initiated["storage_key"], b"")
+
+    r = authed_client.post(f"/api/v1/clips/{clip_id}/complete-upload")
+    assert r.status_code == 422, r.text
+
+    upload_root = Path(authed_client.app.state.upload_dir)
+    assert not (upload_root / initiated["storage_key"]).exists()
+
+    engine = get_engine()
+    with Session(engine) as db:
+        clip = db.get(ClipModel, clip_id)
+        assert clip is not None
+        assert clip.upload_status == "pending"
+        assert db.get(ClipJobModel, clip_id) is None
+
+
+def test_complete_upload_413_when_over_max_size(
+    authed_client: TestClient, monkeypatch
+) -> None:
+    """Actual bytes above the server ceiling are rejected regardless of declared size."""
+    monkeypatch.setenv("ONFLOW_CLIP_MAX_UPLOAD_BYTES", "16")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    initiated = _initiate(authed_client)
+    clip_id = initiated["clip_id"]
+    _write_local_upload(authed_client, initiated["storage_key"], b"x" * 64)
+
+    r = authed_client.post(f"/api/v1/clips/{clip_id}/complete-upload")
+    assert r.status_code == 413, r.text
+
+    upload_root = Path(authed_client.app.state.upload_dir)
+    assert not (upload_root / initiated["storage_key"]).exists()
+
+    engine = get_engine()
+    with Session(engine) as db:
+        assert db.get(ClipJobModel, clip_id) is None
+
+
+def test_complete_upload_records_server_measured_size(authed_client: TestClient) -> None:
+    """Server-measured byte size replaces the untrusted client-declared value."""
+    initiated = _initiate(authed_client)  # declares size_bytes=1024
+    clip_id = initiated["clip_id"]
+    payload = b"fake-mp4-bytes"  # 14 bytes, differs from declared 1024
+    _write_local_upload(authed_client, initiated["storage_key"], payload)
+
+    r = authed_client.post(f"/api/v1/clips/{clip_id}/complete-upload")
+    assert r.status_code == 200, r.text
+
+    engine = get_engine()
+    with Session(engine) as db:
+        clip = db.get(ClipModel, clip_id)
+        assert clip is not None
+        assert clip.size_bytes == len(payload)
+
+
 def test_complete_upload_runs_existing_pipeline(
     authed_client: TestClient, sample_valid_mp4_bytes: bytes
 ) -> None:

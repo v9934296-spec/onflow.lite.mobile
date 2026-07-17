@@ -7,12 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  frontend:
+    name: Frontend (typecheck, tests, iOS bundle)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
-
     steps:
       - uses: actions/checkout@v4
 
@@ -49,3 +46,81 @@ jobs:
             bundle-ios.log
           if-no-files-found: ignore
           retention-days: 7
+
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/api/requirements.txt
+
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      # The suite is self-contained and order-independent (SQLite via fixtures,
+      # in-memory rate limiter reset between tests). No external services needed.
+      - run: python -m pytest -q
+
+  backend-migrations:
+    name: Backend (Alembic migrations on Postgres)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: onflow
+          POSTGRES_PASSWORD: onflow
+          POSTGRES_DB: onflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U onflow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ONFLOW_DATABASE_URL: postgresql://onflow:onflow@localhost:5432/onflow
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/api/requirements.txt
+
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      # Clean-DB migration check: every migration must apply from an empty Postgres.
+      - run: alembic upgrade head
+      # Drift guard: models and migrations must agree. Non-blocking for now so a
+      # pre-existing drift is surfaced in logs without gating merges; promote to a
+      # hard failure once any drift is resolved.
+      - run: alembic check
+        continue-on-error: true
+
+  docker-build:
+    name: Backend (Docker image build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/api/Dockerfile
+          push: false
+          tags: onflow-api:ci

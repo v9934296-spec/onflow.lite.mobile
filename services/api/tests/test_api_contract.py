@@ -4,7 +4,12 @@ import time
 
 from fastapi.testclient import TestClient
 
-from tests.conftest import submit_clip_via_presigned, wait_for_terminal_job
+from tests.conftest import (
+    _UPLOAD_INIT_BODY,
+    submit_clip_via_presigned,
+    wait_for_terminal_job,
+    write_presigned_upload,
+)
 
 
 def test_health(client: TestClient) -> None:
@@ -105,14 +110,23 @@ def test_non_video_upload_fails_video_unreadable(
     assert last.get("failure_reason") == "video_unreadable"
 
 
-def test_empty_upload_fails_job_with_video_unreadable(
+def test_empty_upload_rejected_at_complete_upload(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    job_id = submit_clip_via_presigned(client, auth_headers, video_bytes=b"")
-    last = wait_for_terminal_job(client, job_id, auth_headers, timeout_s=10.0)
+    """Group 5: an empty object is rejected at complete-upload (422) before any job
+    is created — no quota is charged and no analysis is enqueued for junk uploads."""
+    payload = {**_UPLOAD_INIT_BODY, "size_bytes": 1}
+    r = client.post("/api/v1/clips/initiate-upload", json=payload, headers=auth_headers)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    clip_id = body["clip_id"]
+    write_presigned_upload(client, body["storage_key"], b"")
 
-    assert last.get("status") == "failed"
-    assert last.get("failure_reason") == "video_unreadable"
+    cr = client.post(f"/api/v1/clips/{clip_id}/complete-upload", headers=auth_headers)
+    assert cr.status_code == 422, cr.text
+
+    gr = client.get(f"/api/v1/clips/jobs/{clip_id}", headers=auth_headers)
+    assert gr.status_code == 404
 
 
 def test_default_clip_label_is_untagged(
