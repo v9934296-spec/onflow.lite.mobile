@@ -29,6 +29,10 @@ class ObjectStorage(Protocol):
         """Check if the object exists."""
         ...
 
+    async def size(self, key: str) -> int | None:
+        """Return the object size in bytes, or None if it does not exist."""
+        ...
+
 
 class LocalStorage:
     """Local filesystem storage (dev/testing)."""
@@ -68,6 +72,12 @@ class LocalStorage:
 
     async def exists(self, key: str) -> bool:
         return (self._base / key).is_file()
+
+    async def size(self, key: str) -> int | None:
+        p = self._base / key
+        if not p.is_file():
+            return None
+        return p.stat().st_size
 
 
 class S3Storage:
@@ -151,6 +161,18 @@ class S3Storage:
                 return True
             except Exception:
                 return False
+
+        return await asyncio.to_thread(_head)
+
+    async def size(self, key: str) -> int | None:
+        import asyncio
+
+        def _head() -> int | None:
+            try:
+                resp = self._s3.head_object(Bucket=self._bucket, Key=key)
+                return int(resp.get("ContentLength", 0))
+            except Exception:
+                return None
 
         return await asyncio.to_thread(_head)
 

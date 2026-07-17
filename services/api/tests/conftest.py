@@ -40,6 +40,28 @@ def _stub_gemini_analyze_for_contract_tests(
 
 
 @pytest.fixture(autouse=True)
+def _reset_rate_limiter_between_tests() -> None:
+    """The slowapi ``limiter`` is a module-level singleton with in-memory storage
+    that persists across app instances, so hit counts leak between tests (e.g. one
+    rate-limit test's requests push the next over the limit). Reset the storage
+    around every test so the suite is order-independent and CI-safe."""
+    from app.core.rate_limit import limiter
+
+    def _reset() -> None:
+        storage = getattr(limiter, "_storage", None)
+        reset = getattr(storage, "reset", None)
+        if callable(reset):
+            try:
+                reset()
+            except Exception:
+                pass
+
+    _reset()
+    yield
+    _reset()
+
+
+@pytest.fixture(autouse=True)
 def _generous_clip_abuse_limits_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
     """Slowapi clip caps default to 10/hour — many tests initiate multiple uploads."""
     monkeypatch.setenv("ONFLOW_CLIP_RATE_LIMIT_PER_HOUR", "10000")

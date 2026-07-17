@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     clip_rate_limit_per_day: int = 30
     # Max jobs in pending+processing per user; 0 = disable concurrent guard.
     clip_concurrent_processing_limit_per_user: int = 3
+    # Server-side hard ceiling on the actual uploaded clip size (bytes), verified at
+    # complete-upload before quota is charged or analysis is enqueued. 0 = disabled.
+    # Default 200 MiB is generous headroom for a short high-bitrate clip; tune via
+    # ONFLOW_CLIP_MAX_UPLOAD_BYTES.
+    clip_max_upload_bytes: int = 200 * 1024 * 1024
     # RevenueCat webhook: per IP, lenient; auth header remains mandatory in production.
     webhook_rate_limit_per_minute: int = 120
 

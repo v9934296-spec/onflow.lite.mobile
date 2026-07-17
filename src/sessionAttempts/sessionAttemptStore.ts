@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { LoadResult, StorageResult } from "../types";
 import type { SessionAttempt } from "../types/sessionAttempt";
+import { scopedKey } from "../storage/userScope";
 
 const KEY = "onflow.sessionAttempts.v1";
 
@@ -21,7 +22,7 @@ function isSessionAttempt(value: unknown): value is SessionAttempt {
 
 async function loadStore(): Promise<LoadResult<AttemptStore>> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(scopedKey(KEY));
     if (!raw) return { data: {} };
 
     const parsed: unknown = JSON.parse(raw);
@@ -46,7 +47,7 @@ async function loadStore(): Promise<LoadResult<AttemptStore>> {
 
 async function saveStore(store: AttemptStore): Promise<StorageResult> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(store));
+    await AsyncStorage.setItem(scopedKey(KEY), JSON.stringify(store));
     return { ok: true };
   } catch (error) {
     return {

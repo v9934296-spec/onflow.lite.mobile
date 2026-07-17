@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LandedAttempt, LoadResult, StorageResult } from "./types";
+import { scopedKey } from "./storage/userScope";
 
 const KEY = "onflow_lite_progress_v1";
 
@@ -113,7 +114,7 @@ export function getBestTrickStreak(
 
 export async function loadAttempts(): Promise<LoadResult<LandedAttempt[]>> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(scopedKey(KEY));
     if (!raw) return { data: [] };
 
     const parsed: unknown = JSON.parse(raw);
@@ -132,7 +133,7 @@ export async function loadAttempts(): Promise<LoadResult<LandedAttempt[]>> {
 
 export async function saveAttempts(attempts: LandedAttempt[]): Promise<StorageResult> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(attempts));
+    await AsyncStorage.setItem(scopedKey(KEY), JSON.stringify(attempts));
     return { ok: true };
   } catch (error) {
     return {
@@ -149,7 +150,7 @@ export async function appendAttempt(attempt: LandedAttempt): Promise<StorageResu
 
 export async function clearAttempts(): Promise<StorageResult> {
   try {
-    await AsyncStorage.removeItem(KEY);
+    await AsyncStorage.removeItem(scopedKey(KEY));
     return { ok: true };
   } catch (error) {
     return {

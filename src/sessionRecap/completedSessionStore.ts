@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { LoadResult, StorageResult } from "../types";
 import type { SessionRecap } from "../types/sessionRecap";
+import { scopedKey } from "../storage/userScope";
 
 const KEY = "onflow.completedSessions.v1";
 
@@ -20,7 +21,7 @@ function isSessionRecap(value: unknown): value is SessionRecap {
 
 async function loadAll(): Promise<LoadResult<SessionRecap[]>> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(scopedKey(KEY));
     if (!raw) return { data: [] };
 
     const parsed: unknown = JSON.parse(raw);
@@ -39,7 +40,7 @@ async function loadAll(): Promise<LoadResult<SessionRecap[]>> {
 
 async function saveAll(recaps: SessionRecap[]): Promise<StorageResult> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(recaps));
+    await AsyncStorage.setItem(scopedKey(KEY), JSON.stringify(recaps));
     return { ok: true };
   } catch (error) {
     return {
