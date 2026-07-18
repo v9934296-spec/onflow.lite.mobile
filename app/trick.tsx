@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { Redirect, useRouter } from "expo-router";
+import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
@@ -33,6 +33,8 @@ function toggleModifier(current: TrickModifier[], mod: TrickModifier): TrickModi
 
 export default function TrickPicker() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ returnTo?: string }>();
+  const returnTo = typeof params.returnTo === "string" && params.returnTo.startsWith("/") ? params.returnTo : "/flow";
   const { setSelectedTrick } = useSession();
   const { hasActiveSession, hydrateState } = useSkateSession();
   const insets = useSafeAreaInsets();
@@ -52,45 +54,32 @@ export default function TrickPicker() {
     );
   }
 
-  if (!hasActiveSession) {
-    return <Redirect href="/" />;
-  }
+  if (!hasActiveSession) return <Redirect href="/flow" />;
 
   function confirmSelection() {
     if (!baseTrick || !canonicalPreview) return;
     const selected = buildSelectedTrick(baseTrick, modifiers, canonicalPreview);
     track("trick_selected", { trick: selected.canonicalName, trick_id: selected.trickId });
     setSelectedTrick(selected);
-    router.replace("/");
+    router.replace(returnTo as never);
   }
 
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
       <View style={{ gap: 6 }}>
-        <Eyebrow>CHOOSE TRICK</Eyebrow>
+        <Eyebrow color={C.volt}>CALL THE TRICK</Eyebrow>
         <Text style={s.title}>What are you trying?</Text>
-        <Text style={s.sub}>Pick from the catalog. Stance and direction are optional.</Text>
+        <Text style={s.sub}>Pick the base trick first. Add stance or direction only when it matters.</Text>
       </View>
 
-      <Field
-        label="Search"
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Kickflip, 50-50…"
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
+      <Field label="Search" value={query} onChangeText={setQuery} placeholder="Kickflip, 50-50…" autoCapitalize="none" autoCorrect={false} />
 
       {!query.trim() ? (
         <View style={{ gap: 8 }}>
           <Eyebrow color={C.volt}>POPULAR</Eyebrow>
           <View style={s.chipRow}>
             {POPULAR_TRICKS.map((t) => (
-              <Pressable
-                key={t}
-                onPress={() => setBaseTrick(t)}
-                style={[s.chip, baseTrick === t && s.chipActive]}
-              >
+              <Pressable key={t} onPress={() => setBaseTrick(t)} style={[s.chip, baseTrick === t && s.chipActive]}>
                 <Text style={[s.chipText, baseTrick === t && s.chipTextActive]}>{t}</Text>
               </Pressable>
             ))}
@@ -98,39 +87,22 @@ export default function TrickPicker() {
         </View>
       ) : null}
 
-      <View style={{ gap: 8 }}>
-        <Eyebrow>STANCE</Eyebrow>
-        <View style={s.chipRow}>
-          {STANCE_MODIFIERS.map((m) => (
-            <Pressable
-              key={m}
-              onPress={() => setModifiers((prev) => toggleModifier(prev, m))}
-              style={[s.chip, modifiers.includes(m) && s.chipActive]}
-            >
-              <Text style={[s.chipText, modifiers.includes(m) && s.chipTextActive]}>{m}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
-      <View style={{ gap: 8 }}>
-        <Eyebrow>DIRECTION</Eyebrow>
-        <View style={s.chipRow}>
-          {DIRECTION_MODIFIERS.map((m) => (
-            <Pressable
-              key={m}
-              onPress={() => setModifiers((prev) => toggleModifier(prev, m))}
-              style={[s.chip, modifiers.includes(m) && s.chipActive]}
-            >
-              <Text style={[s.chipText, modifiers.includes(m) && s.chipTextActive]}>{m}</Text>
-            </Pressable>
-          ))}
+      <View style={s.modifierRow}>
+        <View style={{ flex: 1, gap: 8 }}>
+          <Eyebrow>STANCE</Eyebrow>
+          <View style={s.chipRow}>
+            {STANCE_MODIFIERS.map((m) => (
+              <Pressable key={m} onPress={() => setModifiers((prev) => toggleModifier(prev, m))} style={[s.chip, modifiers.includes(m) && s.chipActive]}>
+                <Text style={[s.chipText, modifiers.includes(m) && s.chipTextActive]}>{m}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </View>
 
       {canonicalPreview ? (
         <View style={s.preview}>
-          <Eyebrow color={C.volt}>SELECTED</Eyebrow>
+          <Eyebrow color={C.volt}>LOCKED IN</Eyebrow>
           <Text style={s.previewText}>{canonicalPreview}</Text>
         </View>
       ) : null}
@@ -141,20 +113,14 @@ export default function TrickPicker() {
             <Eyebrow>{cat.label.toUpperCase()}</Eyebrow>
             <View style={s.chipRow}>
               {cat.tricks.map((t) => (
-                <Pressable
-                  key={`${cat.id}-${t}`}
-                  onPress={() => setBaseTrick(t)}
-                  style={[s.chip, baseTrick === t && s.chipActive]}
-                >
+                <Pressable key={`${cat.id}-${t}`} onPress={() => setBaseTrick(t)} style={[s.chip, baseTrick === t && s.chipActive]}>
                   <Text style={[s.chipText, baseTrick === t && s.chipTextActive]}>{t}</Text>
                 </Pressable>
               ))}
             </View>
           </View>
         ))}
-        {query.trim() && categories.length === 0 ? (
-          <Text style={s.sub}>No tricks match that search.</Text>
-        ) : null}
+        {query.trim() && categories.length === 0 ? <Text style={s.sub}>No tricks match that search.</Text> : null}
       </ScrollView>
 
       <View style={{ gap: 10 }}>
@@ -168,25 +134,14 @@ export default function TrickPicker() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 12 },
   centered: { alignItems: "center", justifyContent: "center" },
-  title: { fontFamily: F.heading, fontSize: 24, color: C.offwhite },
+  title: { fontFamily: F.heading, fontSize: 28, lineHeight: 32, color: C.offwhite },
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
+  modifierRow: { flexDirection: "row", gap: 12 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: {
-    borderWidth: 1,
-    borderColor: C.aluminum,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: C.charcoal2,
-  },
+  chip: { borderWidth: StyleSheet.hairlineWidth, borderColor: C.charcoal3, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, backgroundColor: C.charcoal2 },
   chipActive: { borderColor: C.volt, backgroundColor: C.charcoal3 },
   chipText: { fontFamily: F.body, fontSize: 13, color: C.offwhite },
   chipTextActive: { color: C.volt, fontFamily: F.bold },
-  preview: {
-    borderLeftWidth: 4,
-    borderLeftColor: C.volt,
-    paddingLeft: 12,
-    gap: 4,
-  },
-  previewText: { fontFamily: F.bold, fontSize: 16, color: C.offwhite },
+  preview: { borderLeftWidth: 4, borderLeftColor: C.volt, paddingLeft: 12, gap: 4 },
+  previewText: { fontFamily: F.heading, fontSize: 20, color: C.offwhite },
 });
