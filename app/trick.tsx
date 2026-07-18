@@ -1,27 +1,16 @@
 import React, { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
+import { updateSkateSession } from "../src/api/sessionApi";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSession } from "../src/session";
 import { C, F } from "../src/theme";
 import { Btn, Eyebrow, Field } from "../src/ui";
 import { filterTrickLibraryByQuery } from "../src/tricks/trickSearch";
 import { canonicalTrickName } from "../src/tricks/trickFormat";
-import {
-  DIRECTION_MODIFIERS,
-  POPULAR_TRICKS,
-  STANCE_MODIFIERS,
-  type TrickModifier,
-} from "../src/tricks/trickLibrary";
+import { DIRECTION_MODIFIERS, POPULAR_TRICKS, STANCE_MODIFIERS, type TrickModifier } from "../src/tricks/trickLibrary";
 import { buildSelectedTrick } from "../src/tricks/types";
 
 function toggleModifier(current: TrickModifier[], mod: TrickModifier): TrickModifier[] {
@@ -36,32 +25,36 @@ export default function TrickPicker() {
   const params = useLocalSearchParams<{ returnTo?: string }>();
   const returnTo = typeof params.returnTo === "string" && params.returnTo.startsWith("/") ? params.returnTo : "/flow";
   const { setSelectedTrick } = useSession();
-  const { hasActiveSession, hydrateState } = useSkateSession();
+  const { activeSession, hasActiveSession, hydrateState, refreshActiveSession } = useSkateSession();
   const insets = useSafeAreaInsets();
-
   const [query, setQuery] = useState("");
   const [baseTrick, setBaseTrick] = useState<string | null>(null);
   const [modifiers, setModifiers] = useState<TrickModifier[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const categories = useMemo(() => filterTrickLibraryByQuery(query), [query]);
   const canonicalPreview = baseTrick ? canonicalTrickName(baseTrick, modifiers) : "";
 
   if (hydrateState === "loading") {
-    return (
-      <View style={[s.screen, s.centered, { paddingTop: insets.top + 16 }]}>
-        <ActivityIndicator color={C.volt} />
-      </View>
-    );
+    return <View style={[s.screen, s.centered, { paddingTop: insets.top + 16 }]}><ActivityIndicator color={C.volt} /></View>;
   }
-
   if (!hasActiveSession) return <Redirect href="/flow" />;
 
-  function confirmSelection() {
-    if (!baseTrick || !canonicalPreview) return;
-    const selected = buildSelectedTrick(baseTrick, modifiers, canonicalPreview);
-    track("trick_selected", { trick: selected.canonicalName, trick_id: selected.trickId });
-    setSelectedTrick(selected);
-    router.replace(returnTo as never);
+  async function confirmSelection() {
+    if (!baseTrick || !canonicalPreview || saving) return;
+    setSaving(true);
+    try {
+      const selected = buildSelectedTrick(baseTrick, modifiers, canonicalPreview);
+      setSelectedTrick(selected);
+      if (activeSession?.id) {
+        const updated = await updateSkateSession(activeSession.id, { focus_trick: selected.canonicalName });
+        if (updated.ok) await refreshActiveSession();
+      }
+      track("trick_selected", { trick: selected.canonicalName, trick_id: selected.trickId });
+      router.replace(returnTo as never);
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -77,56 +70,28 @@ export default function TrickPicker() {
       {!query.trim() ? (
         <View style={{ gap: 8 }}>
           <Eyebrow color={C.volt}>POPULAR</Eyebrow>
-          <View style={s.chipRow}>
-            {POPULAR_TRICKS.map((t) => (
-              <Pressable key={t} onPress={() => setBaseTrick(t)} style={[s.chip, baseTrick === t && s.chipActive]}>
-                <Text style={[s.chipText, baseTrick === t && s.chipTextActive]}>{t}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <View style={s.chipRow}>{POPULAR_TRICKS.map((t) => <Pressable key={t} onPress={() => setBaseTrick(t)} style={[s.chip, baseTrick === t && s.chipActive]}><Text style={[s.chipText, baseTrick === t && s.chipTextActive]}>{t}</Text></Pressable>)}</View>
         </View>
       ) : null}
 
-      <View style={s.modifierRow}>
-        <View style={{ flex: 1, gap: 8 }}>
-          <Eyebrow>STANCE</Eyebrow>
-          <View style={s.chipRow}>
-            {STANCE_MODIFIERS.map((m) => (
-              <Pressable key={m} onPress={() => setModifiers((prev) => toggleModifier(prev, m))} style={[s.chip, modifiers.includes(m) && s.chipActive]}>
-                <Text style={[s.chipText, modifiers.includes(m) && s.chipTextActive]}>{m}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
+      <View style={{ gap: 8 }}>
+        <Eyebrow>STANCE</Eyebrow>
+        <View style={s.chipRow}>{STANCE_MODIFIERS.map((m) => <Pressable key={m} onPress={() => setModifiers((prev) => toggleModifier(prev, m))} style={[s.chip, modifiers.includes(m) && s.chipActive]}><Text style={[s.chipText, modifiers.includes(m) && s.chipTextActive]}>{m}</Text></Pressable>)}</View>
       </View>
 
-      {canonicalPreview ? (
-        <View style={s.preview}>
-          <Eyebrow color={C.volt}>LOCKED IN</Eyebrow>
-          <Text style={s.previewText}>{canonicalPreview}</Text>
-        </View>
-      ) : null}
+      <View style={{ gap: 8 }}>
+        <Eyebrow>DIRECTION</Eyebrow>
+        <View style={s.chipRow}>{DIRECTION_MODIFIERS.map((m) => <Pressable key={m} onPress={() => setModifiers((prev) => toggleModifier(prev, m))} style={[s.chip, modifiers.includes(m) && s.chipActive]}><Text style={[s.chipText, modifiers.includes(m) && s.chipTextActive]}>{m}</Text></Pressable>)}</View>
+      </View>
+
+      {canonicalPreview ? <View style={s.preview}><Eyebrow color={C.volt}>LOCKED IN</Eyebrow><Text style={s.previewText}>{canonicalPreview}</Text></View> : null}
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 14, paddingBottom: 12 }}>
-        {categories.map((cat) => (
-          <View key={cat.id} style={{ gap: 8 }}>
-            <Eyebrow>{cat.label.toUpperCase()}</Eyebrow>
-            <View style={s.chipRow}>
-              {cat.tricks.map((t) => (
-                <Pressable key={`${cat.id}-${t}`} onPress={() => setBaseTrick(t)} style={[s.chip, baseTrick === t && s.chipActive]}>
-                  <Text style={[s.chipText, baseTrick === t && s.chipTextActive]}>{t}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        ))}
+        {categories.map((cat) => <View key={cat.id} style={{ gap: 8 }}><Eyebrow>{cat.label.toUpperCase()}</Eyebrow><View style={s.chipRow}>{cat.tricks.map((t) => <Pressable key={`${cat.id}-${t}`} onPress={() => setBaseTrick(t)} style={[s.chip, baseTrick === t && s.chipActive]}><Text style={[s.chipText, baseTrick === t && s.chipTextActive]}>{t}</Text></Pressable>)}</View></View>)}
         {query.trim() && categories.length === 0 ? <Text style={s.sub}>No tricks match that search.</Text> : null}
       </ScrollView>
 
-      <View style={{ gap: 10 }}>
-        <Btn label="Confirm trick" onPress={confirmSelection} disabled={!baseTrick} />
-        <Btn label="Back" variant="ghost" onPress={() => router.back()} />
-      </View>
+      <View style={{ gap: 10 }}><Btn label={saving ? "Saving…" : "Confirm trick"} onPress={() => void confirmSelection()} disabled={!baseTrick || saving} /><Btn label="Back" variant="ghost" onPress={() => router.back()} /></View>
     </View>
   );
 }
@@ -136,7 +101,6 @@ const s = StyleSheet.create({
   centered: { alignItems: "center", justifyContent: "center" },
   title: { fontFamily: F.heading, fontSize: 28, lineHeight: 32, color: C.offwhite },
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
-  modifierRow: { flexDirection: "row", gap: 12 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: { borderWidth: StyleSheet.hairlineWidth, borderColor: C.charcoal3, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, backgroundColor: C.charcoal2 },
   chipActive: { borderColor: C.volt, backgroundColor: C.charcoal3 },
