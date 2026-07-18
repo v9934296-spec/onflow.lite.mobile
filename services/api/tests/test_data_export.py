@@ -35,10 +35,19 @@ def test_export_shape_and_consent_events(
         "user",
         "consent",
         "clips",
+        "sessions",
+        "feed_events",
+        "trick_stats",
+        "milestones",
+        "custom_lines",
+        "line_attempts",
         "consent_events",
         "export_generated_at",
         "policy_version_at_export",
     }
+    assert isinstance(body["sessions"], list)
+    assert isinstance(body["feed_events"], list)
+    assert "bonus_analyses" in body["user"]
     assert body["policy_version_at_export"] == "v1_2026_04_14"
     assert isinstance(body["export_generated_at"], str) and body["export_generated_at"]
     assert body["user"]["id"]

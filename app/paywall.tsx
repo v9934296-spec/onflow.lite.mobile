@@ -9,6 +9,10 @@ import { PRIVACY_URL, TERMS_URL } from "../src/legal/urls";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow } from "../src/ui";
 
+/**
+ * Free-tier limit screen. OnFlow Lite does not ship in-app purchases yet —
+ * copy must not imply a working store checkout path.
+ */
 export default function PaywallScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -22,12 +26,14 @@ export default function PaywallScreen() {
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
       <View style={{ gap: 6 }}>
-        <Eyebrow>ONFLOW PRO</Eyebrow>
-        <Text style={s.title}>{isPro ? "You're on Pro" : "Upgrade for more analyses"}</Text>
+        <Eyebrow>ANALYSIS LIMIT</Eyebrow>
+        <Text style={s.title}>
+          {isPro ? "You're on Pro" : "You've used this month's free analyses"}
+        </Text>
         <Text style={s.sub}>
           {isPro
             ? "Unlimited clip analyses are active on your account."
-            : "You've hit the free analysis limit. Pro unlocks unlimited uploads and priority processing."}
+            : "OnFlow Lite includes a free monthly analysis allowance. In-app purchases are not available in this build."}
         </Text>
       </View>
 
@@ -41,16 +47,16 @@ export default function PaywallScreen() {
 
       {!isPro ? (
         <Card>
-          <Eyebrow>WHAT PRO INCLUDES</Eyebrow>
-          <Text style={s.bullet}>· Unlimited clip analyses per month</Text>
-          <Text style={s.bullet}>· Priority processing queue</Text>
-          <Text style={s.bullet}>· Re-Up packs for extra credits (coming in lite)</Text>
+          <Eyebrow>WHAT YOU CAN DO</Eyebrow>
+          <Text style={s.bullet}>· Wait until next month for free analyses to reset</Text>
+          <Text style={s.bullet}>· Use any remaining bonus credits on your account</Text>
+          <Text style={s.bullet}>· Contact support if you need Pro access for testing</Text>
         </Card>
       ) : null}
 
       <Text style={s.note}>
-        In-app purchases are not wired in OnFlow Lite yet. Manage billing in the full OnFlow app or
-        contact support if you need Pro access.
+        Pro subscriptions and Re-Up packs are managed server-side (RevenueCat webhooks). This
+        Lite build does not open the App Store purchase sheet.
       </Text>
 
       <View style={{ gap: 10 }}>

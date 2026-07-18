@@ -32,6 +32,7 @@ def _current_month_bounds_utc() -> tuple[datetime, datetime]:
 @runtime_checkable
 class ClipJobRepository(Protocol):
     def create(self, job: ClipJobRecord) -> None: ...
+    def create_exclusive(self, job: ClipJobRecord) -> None: ...
     def get(self, job_id: str) -> ClipJobRecord | None: ...
     def update(self, job: ClipJobRecord) -> None: ...
     def get_for_user(self, job_id: str, user_id: str) -> ClipJobRecord | None: ...
@@ -46,6 +47,7 @@ class ClipJobRepository(Protocol):
     def count_active_clip_jobs(self, user_id: str) -> int: ...
     def delete_all_for_user(self, user_id: str) -> None: ...
     def delete_jobs_by_ids(self, job_ids: list[str]) -> None: ...
+    def try_claim_for_processing(self, job_id: str) -> ClipJobRecord | None: ...
 
 
 class InMemoryClipJobRepository:
@@ -55,6 +57,13 @@ class InMemoryClipJobRepository:
         self._by_id: dict[str, ClipJobRecord] = {}
 
     def create(self, job: ClipJobRecord) -> None:
+        self._by_id[job.id] = job
+
+    def create_exclusive(self, job: ClipJobRecord) -> None:
+        from app.domain.clip_job import JobAlreadyExists
+
+        if job.id in self._by_id:
+            raise JobAlreadyExists(job.id)
         self._by_id[job.id] = job
 
     def get(self, job_id: str) -> ClipJobRecord | None:
@@ -120,6 +129,7 @@ class InMemoryClipJobRepository:
         # Mirrors the SQL implementation: compare ``created_at`` against
         # pre-computed month bounds. The in-memory path is still O(N) over the
         # process-local map, but the bounds match exactly what Postgres sees.
+        # ``monthly_refunded`` is excluded (enqueue/system refund path).
         month_start, next_month_start = _current_month_bounds_utc()
         n = 0
         for j in self._by_id.values():
@@ -134,6 +144,19 @@ class InMemoryClipJobRepository:
             if qs is None or qs == "monthly":
                 n += 1
         return n
+
+    def try_claim_for_processing(self, job_id: str) -> ClipJobRecord | None:
+        """CAS: pending → processing. Returns None if another worker claimed or terminal."""
+        job = self._by_id.get(job_id)
+        if job is None or job.status in ("completed", "failed"):
+            return None
+        if job.status == "processing":
+            # Resume path (restart / redelivery of an in-flight job).
+            return job
+        if job.status != "pending":
+            return None
+        job.with_status("processing")
+        return job
 
     def count_active_clip_jobs(self, user_id: str) -> int:
         return sum(
@@ -197,6 +220,20 @@ class SqlClipJobRepository:
         with self._session_factory() as session:
             session.add(self._from_record(job))
             session.commit()
+
+    def create_exclusive(self, job: ClipJobRecord) -> None:
+        """Insert or raise JobAlreadyExists on primary-key conflict."""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.domain.clip_job import JobAlreadyExists
+
+        with self._session_factory() as session:
+            try:
+                session.add(self._from_record(job))
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise JobAlreadyExists(job.id) from exc
 
     def get(self, job_id: str) -> ClipJobRecord | None:
         with self._session_factory() as session:
@@ -313,6 +350,7 @@ class SqlClipJobRepository:
         # to bare timestamps so the planner can pick an index on
         # ``(user_id, created_at)``. Wrapping ``created_at`` in
         # ``EXTRACT(...)`` would force a sequential scan.
+        # ``monthly_refunded`` is deliberately excluded from the free cap.
         month_start, next_month_start = _current_month_bounds_utc()
         with self._session_factory() as session:
             stmt = (
@@ -329,6 +367,49 @@ class SqlClipJobRepository:
                 )
             )
             return int(session.exec(stmt).one())
+
+    def try_claim_for_processing(self, job_id: str) -> ClipJobRecord | None:
+        """
+        Compare-and-set claim: only one worker transitions ``pending`` → ``processing``.
+
+        If the row is already ``processing`` (API restart redelivery), return it so
+        analysis can resume. Terminal statuses return None (idempotent skip).
+        """
+        from datetime import datetime, timezone as _tz
+
+        now = datetime.now(_tz.utc)
+        with self._session_factory() as session:
+            m = session.get(ClipJobModel, job_id)
+            if m is None:
+                return None
+            if m.status in ("completed", "failed"):
+                return None
+            if m.status == "processing":
+                return self._to_record(m)
+            if m.status != "pending":
+                return None
+            # CAS: only claim if still pending (concurrent workers race safely).
+            from sqlalchemy import update as sa_update
+
+            result = session.execute(
+                sa_update(ClipJobModel)
+                .where(
+                    ClipJobModel.id == job_id,
+                    ClipJobModel.status == "pending",
+                )
+                .values(status="processing", updated_at=now)
+            )
+            session.commit()
+            if result.rowcount == 0:  # type: ignore[attr-defined]
+                # Lost the race — re-read; may now be processing/terminal.
+                m2 = session.get(ClipJobModel, job_id)
+                if m2 is None or m2.status in ("completed", "failed"):
+                    return None
+                if m2.status == "processing":
+                    return None  # other worker owns the claim
+                return None
+            m = session.get(ClipJobModel, job_id)
+            return self._to_record(m) if m else None
 
     def count_active_clip_jobs(self, user_id: str) -> int:
         with self._session_factory() as session:

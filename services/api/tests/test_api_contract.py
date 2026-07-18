@@ -96,18 +96,29 @@ def test_status_lifecycle_shape(
     assert isinstance(nr.get("summary"), str)
 
 
-def test_non_video_upload_fails_video_unreadable(
+def test_non_video_upload_rejected_at_complete_upload(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
-    job_id = submit_clip_via_presigned(
-        client,
-        auth_headers,
-        video_bytes=b"not-a-real-video-but-nonempty",
-    )
-    last = wait_for_terminal_job(client, job_id, auth_headers, timeout_s=10.0)
+    """Non-video magic bytes are rejected at complete-upload (no job, no quota)."""
+    payload = {
+        "duration_seconds": 4.5,
+        "width_px": 1080,
+        "height_px": 1920,
+        "content_type": "video/mp4",
+        "size_bytes": 32,
+    }
+    r = client.post("/api/v1/clips/initiate-upload", json=payload, headers=auth_headers)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    clip_id = body["clip_id"]
+    write_presigned_upload(client, body["storage_key"], b"not-a-real-video-but-nonempty")
 
-    assert last.get("status") == "failed"
-    assert last.get("failure_reason") == "video_unreadable"
+    cr = client.post(f"/api/v1/clips/{clip_id}/complete-upload", headers=auth_headers)
+    assert cr.status_code == 422, cr.text
+    assert "video" in (cr.json().get("detail") or "").lower()
+
+    gr = client.get(f"/api/v1/clips/jobs/{clip_id}", headers=auth_headers)
+    assert gr.status_code == 404
 
 
 def test_empty_upload_rejected_at_complete_upload(

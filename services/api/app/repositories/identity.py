@@ -19,6 +19,7 @@ from app.models import (
     LineAttemptModel,
     MilestoneModel,
     RcWebhookDedupModel,
+    SessionAttemptModel,
     SessionModel,
     SkateSessionModel,
     TrickStatModel,
@@ -367,6 +368,28 @@ class IdentityRepository:
             session.commit()
             return row.bonus_analyses
 
+    def refund_one_bonus(self, user_id: str) -> bool:
+        """
+        Best-effort reverse of ``try_consume_one_bonus``.
+
+        Prefer restoring the OAuth signup pool (decrement ``bonus_analyses_used``);
+        otherwise credit the purchased pool. Used when enqueue fails after charge.
+        """
+        with self._sf() as session:
+            row = session.get(UserModel, user_id)
+            if not row:
+                return False
+            used = row.bonus_analyses_used or 0
+            if used > 0:
+                row.bonus_analyses_used = used - 1
+                session.add(row)
+                session.commit()
+                return True
+            row.bonus_analyses = (row.bonus_analyses or 0) + 1
+            session.add(row)
+            session.commit()
+            return True
+
     def set_clip_retention_consent(self, user_id: str, consent: bool) -> dict[str, Any]:
         now = _utcnow() if consent else None
         with self._sf() as session:
@@ -644,6 +667,11 @@ class IdentityRepository:
         """Remove user-owned rows except users and consent_events."""
         with self._sf() as session:
             for row in session.exec(select(FeedEventModel).where(FeedEventModel.user_id == user_id)):
+                session.delete(row)
+            # Attempts reference skate_sessions — delete before sessions.
+            for row in session.exec(
+                select(SessionAttemptModel).where(SessionAttemptModel.user_id == user_id)
+            ):
                 session.delete(row)
             for row in session.exec(select(ClipModel).where(ClipModel.user_id == user_id)):
                 session.delete(row)

@@ -27,9 +27,11 @@ def test_clip_submission_monthly_quota_exceeded_returns_429(
         r = c.post("/api/v1/auth/session", json={"email": "rate-limit@onflow.test"})
         assert r.status_code == 200
         c.app.state.db.set_user_tier(r.json()["user_id"], "free")
+        from app.services.video_signature import MINIMAL_VIDEO_SNIFF_BYTES
+
         h = {"Authorization": f"Bearer {r.json()['session_token']}"}
         for _ in range(3):
-            submit_clip_via_presigned(c, h, video_bytes=b"x")
+            submit_clip_via_presigned(c, h, video_bytes=MINIMAL_VIDEO_SNIFF_BYTES)
         initiated = c.post(
             "/api/v1/clips/initiate-upload",
             json={
@@ -42,7 +44,7 @@ def test_clip_submission_monthly_quota_exceeded_returns_429(
             headers=h,
         )
         assert initiated.status_code == 201, initiated.text
-        write_presigned_upload(c, initiated.json()["storage_key"], b"x")
+        write_presigned_upload(c, initiated.json()["storage_key"], MINIMAL_VIDEO_SNIFF_BYTES)
         r4 = c.post(
             f"/api/v1/clips/{initiated.json()['clip_id']}/complete-upload",
             headers=h,

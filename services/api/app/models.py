@@ -242,6 +242,29 @@ class SkateSessionModel(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
+class SessionAttemptModel(SQLModel, table=True):
+    """Client-logged session attempt (landed/missed) — canonical server store.
+
+    Primary key is the **client-generated** id so offline outbox sync is idempotent.
+    """
+
+    __tablename__ = "session_attempts"
+    __table_args__ = (
+        Index("ix_session_attempts_user_session", "user_id", "session_id"),
+        Index("ix_session_attempts_session_logged", "session_id", "logged_at"),
+    )
+
+    id: str = Field(primary_key=True, max_length=80)
+    user_id: str = Field(index=True, max_length=64)
+    session_id: str = Field(foreign_key="skate_sessions.id", max_length=36, index=True)
+    trick_id: str = Field(max_length=64)
+    canonical_name: str = Field(max_length=128)
+    outcome: str = Field(max_length=16)  # landed | missed
+    logged_at: datetime = Field(default_factory=_utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    deleted_at: Optional[datetime] = Field(default=None)
+
+
 class ClipModel(SQLModel, table=True):
     """V1 clip row — two-step upload (initiate → S3 PUT → complete)."""
 

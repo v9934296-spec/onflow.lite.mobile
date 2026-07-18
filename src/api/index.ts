@@ -35,6 +35,8 @@ export {
 export { fetchClipJob } from "./jobApi";
 export { fetchFeed, parseFeedEvent, parseFeedResponse } from "./feedApi";
 export { syncBillingToBackend } from "./billingApi";
+export { deleteMyAccount, exportMyData } from "./accountApi";
+export { fetchSessionAttempts, syncSessionAttempts } from "./attemptApi";
 export { parseClipJob, type ClipJob, type ClipJobStatus } from "./types/clipJob";
 export {
   DEFAULT_REQUEST_TIMEOUT_MS,

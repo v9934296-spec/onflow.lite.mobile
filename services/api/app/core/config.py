@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     # Default 200 MiB is generous headroom for a short high-bitrate clip; tune via
     # ONFLOW_CLIP_MAX_UPLOAD_BYTES.
     clip_max_upload_bytes: int = 200 * 1024 * 1024
+    # Abandon pending V1 uploads older than this many hours (no complete-upload).
+    # Reaper runs on API startup (best-effort). Minimum effective value is 1 hour.
+    clip_pending_reap_hours: int = 24
     # RevenueCat webhook: per IP, lenient; auth header remains mandatory in production.
     webhook_rate_limit_per_minute: int = 120
 

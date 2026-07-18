@@ -14,7 +14,7 @@ from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.core.feature_gates import tier_has_feature
 from app.core.tiers import normalize_tier
-from app.models import ClipModel, SkateSessionModel
+from app.models import ClipModel, SessionAttemptModel, SkateSessionModel
 from app.schemas.sessions import (
     SessionCreate,
     SessionListItem,
@@ -68,8 +68,15 @@ def _clip_counts(db: Session, session_id: str) -> tuple[int, int]:
         ClipModel.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     clip_count = int(db.exec(stmt).one())
-    # attempt_count mirrors clip_count until P.T.E. distinguishes attempts
-    return clip_count, clip_count
+    attempt_stmt = select(func.count(SessionAttemptModel.id)).where(
+        SessionAttemptModel.session_id == session_id,
+        SessionAttemptModel.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    attempt_count = int(db.exec(attempt_stmt).one())
+    # Fall back to clip_count when no manual attempts have been synced yet.
+    if attempt_count == 0:
+        attempt_count = clip_count
+    return clip_count, attempt_count
 
 
 def _session_list_aggregates(

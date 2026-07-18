@@ -22,18 +22,8 @@ _ISO_BMFF_LEADING_BOXES = {
 _EBML_MAGIC = b"\x1a\x45\xdf\xa3"  # Matroska / WebM
 
 
-def looks_like_video(file_path: str) -> bool:
-    """Return True if the file header matches a known video container.
-
-    Recognizes ISO Base Media (mp4/mov/m4v), AVI (RIFF), and Matroska/WebM (EBML).
-    Returns False for unreadable, truncated, or non-video files.
-    """
-    try:
-        with open(file_path, "rb") as f:
-            head = f.read(32)
-    except OSError:
-        return False
-
+def looks_like_video_bytes(head: bytes) -> bool:
+    """Return True if ``head`` (first ~32 bytes) matches a known video container."""
     if len(head) < 12:
         return False
 
@@ -50,3 +40,24 @@ def looks_like_video(file_path: str) -> bool:
         return True
 
     return False
+
+
+def looks_like_video(file_path: str) -> bool:
+    """Return True if the file header matches a known video container.
+
+    Recognizes ISO Base Media (mp4/mov/m4v), AVI (RIFF), and Matroska/WebM (EBML).
+    Returns False for unreadable, truncated, or non-video files.
+    """
+    try:
+        with open(file_path, "rb") as f:
+            head = f.read(32)
+    except OSError:
+        return False
+    return looks_like_video_bytes(head)
+
+
+# Minimal ISO BMFF "ftyp" header + padding — valid for sniffer, not a real movie.
+# Used by tests that need to pass complete-upload without a full sample MP4.
+MINIMAL_VIDEO_SNIFF_BYTES = (
+    b"\x00\x00\x00\x18ftypisom\x00\x00\x00\x00isomiso2" + b"\x00" * 64
+)

@@ -33,9 +33,11 @@ def _initiate(client: TestClient) -> dict:
 
 
 def _write_local_upload(client: TestClient, storage_key: str) -> None:
+    from app.services.video_signature import MINIMAL_VIDEO_SNIFF_BYTES
+
     dest = Path(client.app.state.upload_dir) / storage_key
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(b"fake-mp4-bytes")
+    dest.write_bytes(MINIMAL_VIDEO_SNIFF_BYTES)
 
 
 def _job_quota_source(clip_id: str) -> str | None:

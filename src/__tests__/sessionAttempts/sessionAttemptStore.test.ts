@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
+}));
+
+vi.mock("expo-constants", () => ({
+  default: {
+    expoConfig: { version: "1.0.0", ios: { buildNumber: "1" } },
+    nativeBuildVersion: "1",
+  },
+}));
+
 vi.mock("@react-native-async-storage/async-storage", () => {
   const store = new Map<string, string>();
   return {
@@ -27,9 +38,18 @@ import {
 import { buildSessionAttempt } from "../../types/sessionAttempt";
 
 describe("sessionAttemptStore", () => {
+  const originalUrl = process.env.EXPO_PUBLIC_API_URL;
+
+  beforeEach(() => {
+    // Unconfigured API → fetch/merge/outbox flush are no-ops for unit tests.
+    delete process.env.EXPO_PUBLIC_API_URL;
+  });
+
   afterEach(async () => {
     await clearSessionAttempts("sess-1");
     await clearSessionAttempts("sess-2");
+    if (originalUrl === undefined) delete process.env.EXPO_PUBLIC_API_URL;
+    else process.env.EXPO_PUBLIC_API_URL = originalUrl;
   });
 
   it("returns empty list for unknown session", async () => {

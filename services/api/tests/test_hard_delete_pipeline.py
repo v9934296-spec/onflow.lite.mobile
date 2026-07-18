@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import BinaryIO
 
+import pytest
+
 from app.domain.clip_job import ClipJobRecord
 from app.repositories.clip_jobs import InMemoryClipJobRepository
 from app.services.deletion_queue import _hard_delete_user_clips_impl
@@ -150,3 +152,69 @@ async def test_hard_delete_retries_storage_success_when_db_delete_failed() -> No
     assert storage.existing_keys == set()
     assert repo.list_for_user(user_id, limit=10) == []
     assert report["success_count"] == 1
+
+
+async def test_hard_delete_extra_storage_keys_without_clip_jobs() -> None:
+    """V1 pending uploads have storage keys but no clip_jobs row."""
+    user_id = "user-005"
+    orphan = "clips/pending-only.mp4"
+    repo = InMemoryClipJobRepository()
+    storage = SpyStorage(existing_keys={orphan})
+
+    report = await _hard_delete_user_clips_impl(
+        user_id,
+        repo,
+        storage,
+        extra_storage_keys=[orphan],
+    )
+
+    assert orphan in storage.deleted_keys
+    assert orphan not in storage.existing_keys
+    assert report["object_count"] == 1
+    assert report["objects_deleted"] == 1
+    assert report["failure_count"] == 0
+
+
+async def test_hard_delete_merges_extra_keys_with_job_refs() -> None:
+    user_id = "user-006"
+    shared = "clips/shared.mp4"
+    only_extra = "clips/extra-only.mp4"
+    repo = _repo_with_clips(user_id, [shared])
+    storage = SpyStorage(existing_keys={shared, only_extra})
+
+    report = await _hard_delete_user_clips_impl(
+        user_id,
+        repo,
+        storage,
+        extra_storage_keys=[shared, only_extra],
+    )
+
+    assert set(storage.deleted_keys) == {shared, only_extra}
+    assert repo.list_for_user(user_id, limit=10) == []
+    assert report["objects_deleted"] == 2
+    assert report["failure_count"] == 0
+
+
+async def test_hard_delete_purges_retention_dir(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import get_settings
+    from app.services.deletion_queue import purge_retention_dir_for_user
+
+    user_id = "user-007"
+    retained = tmp_path / "retained"
+    monkeypatch.setenv("ONFLOW_RETENTION_DIR", str(retained))
+    get_settings.cache_clear()
+
+    clip_dir = retained / user_id / "kickflip"
+    clip_dir.mkdir(parents=True)
+    (clip_dir / "job-1.mp4").write_bytes(b"video")
+    (clip_dir / "job-1.json").write_text("{}", encoding="utf-8")
+    assert (retained / user_id).is_dir()
+
+    n = purge_retention_dir_for_user(user_id)
+    assert n == 2
+    assert not (retained / user_id).exists()
+
+    # Idempotent
+    assert purge_retention_dir_for_user(user_id) == 0

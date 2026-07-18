@@ -7,6 +7,7 @@ import React, {
 } from "react";
 
 import { fetchAccountMe } from "../api/authApi";
+import { flushAttemptOutbox } from "../sessionAttempts/attemptOutbox";
 import { activateStorageForUser, setStorageUserId } from "../storage/userScope";
 import type { AccountMe } from "../types/api/account";
 
@@ -39,6 +40,8 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       }
       await activateStorageForUser(result.data.user_id);
       setUser(result.data);
+      // Drain offline attempt outbox after identity is known.
+      void flushAttemptOutbox();
       return true;
     } finally {
       setAccountLoading(false);
