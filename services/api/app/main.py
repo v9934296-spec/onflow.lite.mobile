@@ -36,6 +36,7 @@ from app.routers import (
     lines,
     oauth_signin,
     progression,
+    session_attempts,
     sessions,
     stats,
     webhooks,
@@ -181,6 +182,16 @@ async def lifespan(app: FastAPI):
         upload_dir.resolve(),
     )
     await _resume_interrupted_jobs(app)
+
+    # Best-effort cleanup of abandoned pending uploads (storage + clip rows).
+    try:
+        from app.services.clip_pending_reaper import reap_abandoned_pending_clips
+
+        report = await reap_abandoned_pending_clips(storage=app.state.storage)
+        logger.info("startup_pending_reaper", **report)
+    except Exception:
+        logger.exception("startup_pending_reaper_failed")
+
     yield
 
 
@@ -255,6 +266,7 @@ def create_app() -> FastAPI:
     app.include_router(clips.router)
     app.include_router(clips_v1.router)
     app.include_router(sessions.router)
+    app.include_router(session_attempts.router)
     app.include_router(feed.router)
     app.include_router(progression.router)
     app.include_router(stats.router)

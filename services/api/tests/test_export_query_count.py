@@ -143,6 +143,7 @@ def test_existing_export_shape_preserved(
         "failure_reason",
         "result",
         "clip_metadata",
+        "quota_source",
     }
     assert clip["job_id"] == "export-perf-000"
     assert clip["clip_metadata"] == {"stance": "regular"}

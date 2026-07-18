@@ -28,7 +28,11 @@ def _initiate(authed_client: TestClient, session_id: str | None = None) -> dict:
     return r.json()
 
 
-def _write_local_upload(client: TestClient, storage_key: str, data: bytes = b"fake-mp4-bytes") -> None:
+def _write_local_upload(client: TestClient, storage_key: str, data: bytes | None = None) -> None:
+    from app.services.video_signature import MINIMAL_VIDEO_SNIFF_BYTES
+
+    if data is None:
+        data = MINIMAL_VIDEO_SNIFF_BYTES
     upload_root = Path(client.app.state.upload_dir)
     dest = upload_root / storage_key
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -136,9 +140,11 @@ def test_complete_upload_413_when_over_max_size(
 
 def test_complete_upload_records_server_measured_size(authed_client: TestClient) -> None:
     """Server-measured byte size replaces the untrusted client-declared value."""
+    from app.services.video_signature import MINIMAL_VIDEO_SNIFF_BYTES
+
     initiated = _initiate(authed_client)  # declares size_bytes=1024
     clip_id = initiated["clip_id"]
-    payload = b"fake-mp4-bytes"  # 14 bytes, differs from declared 1024
+    payload = MINIMAL_VIDEO_SNIFF_BYTES  # differs from declared 1024
     _write_local_upload(authed_client, initiated["storage_key"], payload)
 
     r = authed_client.post(f"/api/v1/clips/{clip_id}/complete-upload")
@@ -149,6 +155,24 @@ def test_complete_upload_records_server_measured_size(authed_client: TestClient)
         clip = db.get(ClipModel, clip_id)
         assert clip is not None
         assert clip.size_bytes == len(payload)
+
+
+def test_complete_upload_422_when_not_video(authed_client: TestClient) -> None:
+    """Non-video magic bytes are rejected before quota charge / enqueue."""
+    initiated = _initiate(authed_client)
+    clip_id = initiated["clip_id"]
+    _write_local_upload(authed_client, initiated["storage_key"], b"this-is-not-a-video-file!!!!")
+
+    r = authed_client.post(f"/api/v1/clips/{clip_id}/complete-upload")
+    assert r.status_code == 422, r.text
+    assert "video" in r.json()["detail"].lower()
+
+    upload_root = Path(authed_client.app.state.upload_dir)
+    assert not (upload_root / initiated["storage_key"]).exists()
+
+    engine = get_engine()
+    with Session(engine) as db:
+        assert db.get(ClipJobModel, clip_id) is None
 
 
 def test_complete_upload_runs_existing_pipeline(

@@ -1,8 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { fetchSessionAttempts } from "../api/attemptApi";
 import { userScopedStorageKey } from "../storage/userScopedStorage";
 import type { LoadResult, StorageResult } from "../types";
 import type { SessionAttempt } from "../types/sessionAttempt";
+import { enqueueAttemptForSync, flushAttemptOutbox } from "./attemptOutbox";
 
 type AttemptStore = Record<string, SessionAttempt[]>;
 
@@ -21,6 +23,13 @@ function isSessionAttempt(value: unknown): value is SessionAttempt {
     (o.outcome === "landed" || o.outcome === "missed") &&
     typeof o.loggedAt === "string"
   );
+}
+
+function mergeById(local: SessionAttempt[], remote: SessionAttempt[]): SessionAttempt[] {
+  const map = new Map<string, SessionAttempt>();
+  for (const a of remote) map.set(a.id, a);
+  for (const a of local) map.set(a.id, a); // local wins on conflict
+  return Array.from(map.values()).sort((a, b) => a.loggedAt.localeCompare(b.loggedAt));
 }
 
 async function loadStore(userId: string): Promise<LoadResult<AttemptStore>> {
@@ -68,8 +77,25 @@ export async function loadSessionAttempts(
   if (!sid) return { data: [] };
 
   const result = await loadStore(userId);
+  let data = result.data[sid] ?? [];
+
+  // Best-effort merge from server (device reinstall / multi-device).
+  try {
+    const remote = await fetchSessionAttempts(sid);
+    if (remote.ok && remote.data.length > 0) {
+      data = mergeById(data, remote.data);
+      const store = { ...result.data, [sid]: data };
+      await saveStore(userId, store);
+    }
+  } catch {
+    // offline — keep local
+  }
+
+  // Drain any pending outbox while we're online.
+  void flushAttemptOutbox();
+
   return {
-    data: result.data[sid] ?? [],
+    data,
     loadError: result.loadError,
   };
 }
@@ -82,8 +108,19 @@ export async function appendSessionAttempt(
   if (!sid) return { ok: false, error: "Missing session id" };
 
   const result = await loadStore(userId);
-  const next = [...(result.data[sid] ?? []), attempt];
-  return saveStore(userId, { ...result.data, [sid]: next });
+  const existing = result.data[sid] ?? [];
+  if (existing.some((a) => a.id === attempt.id)) {
+    await enqueueAttemptForSync(attempt);
+    void flushAttemptOutbox();
+    return { ok: true };
+  }
+  const next = [...existing, attempt];
+  const saved = await saveStore(userId, { ...result.data, [sid]: next });
+  if (!saved.ok) return saved;
+
+  await enqueueAttemptForSync(attempt);
+  void flushAttemptOutbox();
+  return { ok: true };
 }
 
 export async function clearSessionAttempts(userId: string, sessionId: string): Promise<StorageResult> {

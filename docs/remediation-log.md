@@ -413,25 +413,143 @@ model + offline sync. Each needs its own migration + Postgres verification.
 
 ---
 
+## Entry 5 — Group 4 (partial): deletion media completeness + in-app delete/export
+
+Issue group: 4 (Privacy deletion/export). Sub-problems addressed:
+
+1. Hard-delete only walked `clip_jobs` storage refs, so **pending V1 uploads**
+   (ClipModel.storage_key with no job row) were orphaned after account delete.
+2. **Retention copies** under `{retention_dir}/{user_id}/` were never purged.
+3. Client Settings had no in-app delete/export — only an external info URL
+   (App Store 5.1.1(v) risk when accounts are created in-app).
+
+### Change
+
+- `list_v1_clip_storage_keys(user_id)` — collect ClipModel storage/thumbnail keys
+  **before** `purge_user_owned_rows`.
+- `enqueue_hard_delete(..., extra_storage_keys=)` — pass keys into ARQ / sync path.
+- `_hard_delete_user_clips_impl` merges extra keys with job refs, deletes once.
+- `purge_retention_dir_for_user` — path-safe `rmtree` of retention tree.
+- Client: `src/api/accountApi.ts` (`deleteMyAccount`, `exportMyData`); Settings
+  wires confirm → DELETE, Share export JSON, then sign-out.
+
+### Files changed
+
+- `services/api/app/services/deletion_queue.py`
+- `services/api/app/routers/account.py`
+- `services/api/tests/test_account_deletion.py`
+- `services/api/tests/test_hard_delete_pipeline.py`
+- `src/api/accountApi.ts` (new)
+- `src/api/index.ts`
+- `src/__tests__/api/accountApi.test.ts` (new)
+- `app/settings.tsx`
+
+### Tests / verification
+
+- `pytest tests/test_account_deletion.py tests/test_hard_delete_pipeline.py -q`
+  → **14 passed**
+- `npm test -- src/__tests__/api/accountApi.test.ts` → **2 passed**
+- `npm run typecheck` → PASS
+
+### Acceptance criteria status (Group 4)
+
+- [x] Pending V1 upload objects deleted on account delete — verified.
+- [x] Retention dir for user purged on account delete — verified.
+- [x] In-app delete account + export entry points — implemented.
+- [ ] Full-table export (sessions, feed, stats, billing…) — still limited to
+      clips + consent; product/policy decision open.
+- [ ] Pending-upload reaper for abandoned non-deleted accounts — separate P1.
+
+---
+
+## Entry 6 — Export expand, quota/CAS, analytics, paywall, pending reaper
+
+### Group 4 — full-table export (decision-free tables)
+
+`build_account_export` now includes sessions, feed_events, trick_stats,
+milestones, custom_lines, line_attempts, plus billing fields on `user`.
+Clip history remains uncapped via `iter_all_for_user`.
+
+### Group 3 — enqueue failure refund + CAS claim (partial)
+
+- `complete_v1_clip_upload`: on enqueue failure → mark job failed, set
+  `quota_source=monthly_refunded` or `refund_one_bonus`, clip `failed`, HTTP 503.
+- `try_claim_for_processing`: pending → processing CAS in SQL + in-memory repos;
+  worker uses it before analysis.
+- Full transactional outbox / quota ledger still open (arch).
+
+### Group 1 — first-party analytics
+
+- `POST /api/v1/beta/client-events` persists **all** allowlisted kinds to
+  `client_funnel_events` (not only share).
+- Client `track()` fire-and-forgets to that endpoint when signed in; buffers
+  offline; still logs in `__DEV__`.
+
+### Product honesty — free-only Lite paywall
+
+- Paywall copy no longer implies working IAP; documents server-side Pro only.
+
+### Group 5 follow-up — pending upload reaper
+
+- `reap_abandoned_pending_clips` on API startup; `ONFLOW_CLIP_PENDING_REAP_HOURS`
+  (default 24).
+
+### Verification
+
+- Backend: export, CAS/enqueue refund, reaper, deletion suites green.
+- Frontend: analytics + accountApi tests + typecheck green.
+
+---
+
 ## Status summary (reduced register)
 
 | Group | Title | Status |
 |-------|-------|--------|
-| 1 | Production analytics | FLAGGED — needs sink decision (A first-party / B vendor) |
+| 1 | Production analytics | DONE (first-party) — Entry 6; vendor option still available later |
 | 2 | Progression single source of truth | PARTIAL — on-device isolation DONE (Entry 1); server canonical model open (arch) |
-| 3 | Job/quota/queue reliability | PARTIAL — pre-charge upload guard DONE (Entry 2); quota refund FLAGGED (billing+migration); outbox/ledger/CAS open (arch) |
-| 4 | Privacy deletion/export | PARTIAL — uncapped export DONE (Entry 3); deletion completeness + asset purge FLAGGED (privacy decision) |
-| 5 | Upload validation | DONE — server-side size verification (Entry 2); media-probe + pending reaper are follow-ups |
-| 8 | CI coverage | DONE — backend pytest verified green; Postgres migration + Docker jobs added (first run on GitHub) |
+| 3 | Job/quota/queue reliability | PARTIAL — upload guard (Entry 2) + enqueue refund + CAS claim (Entry 6); outbox/ledger open |
+| 4 | Privacy deletion/export | MOSTLY DONE — export tables + media purge + in-app delete/export (Entries 3–6) |
+| 5 | Upload validation | DONE — size check (Entry 2) + pending reaper (Entry 6); media-probe optional follow-up |
+| 8 | CI coverage | DONE — backend pytest + Postgres migration + Docker jobs |
 
-Completed & verified this environment: Groups 5, 4 (export), 8, plus the Group 2
-on-device slice, plus a deterministic/self-contained backend suite (348 passing).
+## Entry 7 — Media sniff at complete-upload + quota lock + exclusive create
 
-Blocked on YOUR decision: Group 1 (analytics sink), Group 3 (quota-refund
-policy), Group 4 (retention/deletion policy).
+### Group 5 — magic-byte sniff before charge
 
-Blocked on backend infra (Docker + Postgres/Redis) for verification: Groups 2 &
-3 architectural cores, and first execution of the new CI migration/Docker jobs.
+`complete_v1_clip_upload` downloads/opens the object and runs `looks_like_video`
+**before** quota charge or enqueue. Non-video → delete object, 422, no job.
+
+### Group 3 — process-local quota serialization
+
+- `create_job_charging_quota`: per-user lock around decide-quota + insert
+- `create_exclusive` / `JobAlreadyExists` for concurrent same-clip_id completes
+- Concurrent free-tier stress test (`test_quota_lock`) pins cap respect
+
+### Verification
+
+- Upload/quota/contract/auth tests: 36 passed
+
+## Entry 8 — Group 2: server SessionAttempt + offline outbox
+
+### Backend
+- `session_attempts` table (client id PK for idempotency) + Alembic
+  `20260717_session_attempts`
+- `POST /api/v1/session-attempts/sync` batch upsert
+- `GET /api/v1/sessions/{id}/attempts`
+- Account purge + export include attempts; session `attempt_count` prefers
+  synced rows
+
+### Client
+- `attemptApi` + `attemptOutbox` (scoped AsyncStorage)
+- `appendSessionAttempt` enqueues + flushes; `loadSessionAttempts` merges
+  server; flush on sign-in
+
+### Verification
+- Backend `test_session_attempts` + export/delete: green
+- Frontend attemptApi + store tests + typecheck: green
+
+Still open (arch / product): distributed multi-worker quota ledger, RevenueCat
+IAP in Lite, deep issue register file.
 
 Still missing: the deep issue register (`ONFLOW_REPOMIX_DEEP_ISSUE_REGISTER.md`)
 with the authoritative 15 P0s + acceptance criteria.

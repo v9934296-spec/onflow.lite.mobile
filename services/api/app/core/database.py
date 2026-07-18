@@ -52,6 +52,7 @@ def create_db_tables() -> None:
         LineAttemptModel,
         MilestoneModel,
         RcWebhookDedupModel,
+        SessionAttemptModel,
         SessionModel,
         SkateSessionModel,
         SubscriptionEventModel,

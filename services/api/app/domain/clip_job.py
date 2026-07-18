@@ -8,6 +8,10 @@ from typing import Any, Literal
 JobStatus = Literal["pending", "processing", "completed", "failed"]
 
 
+class JobAlreadyExists(Exception):
+    """Raised when insert races on the same job/clip primary key."""
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 

@@ -4,20 +4,24 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import structlog
 from fastapi import HTTPException, Request
 from sqlmodel import Session
 
 from app.core.config import get_settings
 from app.core.tiers import normalize_tier
-from app.domain.clip_job import ClipJobRecord
+from app.domain.clip_job import ClipJobRecord, JobAlreadyExists
 from app.models import ClipModel
 from app.repositories.clip_jobs import ClipJobRepository
 from app.schemas.clips import ClipCompleteUploadResponse
 from app.services.clip_playback_hints import sanitize_public_media_url
-from app.services.clip_quota import reserve_clip_submission
+from app.services.clip_quota import create_job_charging_quota
 from app.services.clip_upload import iso_z
 from app.services.job_queue import enqueue_clip_job
 from app.services.trick_registry import normalize_trick_name
+from app.services.video_signature import looks_like_video
+
+logger = structlog.get_logger(__name__)
 
 
 def clip_model_to_response(
@@ -58,6 +62,47 @@ def _load_owned_clip(db: Session, clip_id: str, user_id: str) -> ClipModel:
     return clip
 
 
+async def _verify_upload_object(storage: Any, clip: ClipModel) -> int:
+    """Existence, size ceiling, and magic-byte sniff. Deletes rejects. Returns size."""
+    if not await storage.exists(clip.storage_key):
+        raise HTTPException(
+            status_code=404,
+            detail="Upload not found at storage key — confirm the client PUT succeeded.",
+        )
+
+    actual_size = await storage.size(clip.storage_key)
+    if actual_size is None or actual_size <= 0:
+        await storage.delete(clip.storage_key)
+        raise HTTPException(
+            status_code=422,
+            detail="Uploaded file is empty or unreadable — re-record and upload again.",
+        )
+    max_upload_bytes = get_settings().clip_max_upload_bytes
+    if max_upload_bytes > 0 and actual_size > max_upload_bytes:
+        await storage.delete(clip.storage_key)
+        raise HTTPException(
+            status_code=413,
+            detail="Uploaded clip exceeds the maximum allowed size.",
+        )
+
+    # Reject non-video payloads before charging quota / enqueueing analysis.
+    try:
+        local_path = await storage.get_path(clip.storage_key)
+    except Exception as exc:
+        await storage.delete(clip.storage_key)
+        raise HTTPException(
+            status_code=422,
+            detail="Uploaded file is empty or unreadable — re-record and upload again.",
+        ) from exc
+    if not looks_like_video(local_path):
+        await storage.delete(clip.storage_key)
+        raise HTTPException(
+            status_code=422,
+            detail="Uploaded file is not a recognized video format — re-record and upload again.",
+        )
+    return actual_size
+
+
 async def complete_v1_clip_upload(
     request: Request,
     clip_id: str,
@@ -76,30 +121,7 @@ async def complete_v1_clip_upload(
         raise HTTPException(status_code=409, detail="Clip upload already completed.")
 
     storage = request.app.state.storage
-    if not await storage.exists(clip.storage_key):
-        raise HTTPException(
-            status_code=404,
-            detail="Upload not found at storage key — confirm the client PUT succeeded.",
-        )
-
-    # Server-side upload verification (Group 5): the client's declared size_bytes at
-    # initiate is untrusted. Measure the real object before charging quota or enqueuing
-    # analysis, and delete anything we reject so storage can't be used as a dumping
-    # ground. Server-measured size replaces the client claim on the clip row.
-    actual_size = await storage.size(clip.storage_key)
-    if actual_size is None or actual_size <= 0:
-        await storage.delete(clip.storage_key)
-        raise HTTPException(
-            status_code=422,
-            detail="Uploaded file is empty or unreadable — re-record and upload again.",
-        )
-    max_upload_bytes = get_settings().clip_max_upload_bytes
-    if max_upload_bytes > 0 and actual_size > max_upload_bytes:
-        await storage.delete(clip.storage_key)
-        raise HTTPException(
-            status_code=413,
-            detail="Uploaded clip exceeds the maximum allowed size.",
-        )
+    actual_size = await _verify_upload_object(storage, clip)
     if actual_size != clip.size_bytes:
         clip.size_bytes = actual_size
 
@@ -139,21 +161,28 @@ async def complete_v1_clip_upload(
                     detail="Too many clips are still processing. Finish or wait before uploading another.",
                 )
 
-        # First real completion → charge the product quota now (mirrors the legacy
-        # reserve-at-create) and record how it was charged so monthly-free accounting
-        # stays correct. Raises 429 if the user is over quota with no bonus left;
-        # the clip row stays "pending" and nothing is enqueued.
-        tier_norm, quota_src = reserve_clip_submission(request, user_id)
-        record = ClipJobRecord.new_pending(
-            clip_id,
-            user_id,
-            f"storage:{clip.storage_key}",
-            clip_label=label,
-            tier=tier_norm,
-            clip_metadata=metadata,
-            quota_source=quota_src,
-        )
-        repo.create(record)
+        def _build(tier_norm: str, quota_src: str | None) -> ClipJobRecord:
+            return ClipJobRecord.new_pending(
+                clip_id,
+                user_id,
+                f"storage:{clip.storage_key}",
+                clip_label=label,
+                tier=tier_norm,
+                clip_metadata=metadata,
+                quota_source=quota_src,
+            )
+
+        try:
+            create_job_charging_quota(request, user_id, _build)
+        except JobAlreadyExists:
+            # Concurrent complete-upload won the insert — treat as in-flight.
+            clip.upload_status = "analyzing"
+            clip.updated_at = datetime.now(timezone.utc)
+            db.add(clip)
+            db.commit()
+            db.refresh(clip)
+            eta = datetime.now(timezone.utc) + timedelta(seconds=45)
+            return clip_model_to_response(clip, estimated_analysis_completion_at=eta)
     else:
         # Retry of an already-charged job — recompute tier but never re-charge quota.
         tier_norm = normalize_tier(identity.get_user_tier(user_id))
@@ -173,13 +202,35 @@ async def complete_v1_clip_upload(
     db.commit()
     db.refresh(clip)
 
-    await enqueue_clip_job(
-        clip_id,
-        clip.storage_key,
-        user_id,
-        fallback_repo=repo,
-        fallback_storage=storage,
-    )
+    try:
+        await enqueue_clip_job(
+            clip_id,
+            clip.storage_key,
+            user_id,
+            fallback_repo=repo,
+            fallback_storage=storage,
+        )
+    except Exception as exc:
+        # Charge already applied; reverse quota and mark failed so the user is
+        # not stuck in "analyzing" with a spent free slot / bonus credit.
+        logger.exception("enqueue_clip_job_failed job_id=%s", clip_id)
+        failed = repo.get(clip_id)
+        if failed is not None and failed.status in ("pending", "processing"):
+            qs = failed.quota_source
+            if qs == "bonus":
+                identity.refund_one_bonus(user_id)
+            elif qs == "monthly" or qs is None:
+                failed.quota_source = "monthly_refunded"
+            failed.with_status("failed", failure_reason="enqueue_failed")
+            repo.update(failed)
+        clip.upload_status = "failed"
+        clip.updated_at = datetime.now(timezone.utc)
+        db.add(clip)
+        db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="Could not queue clip analysis. Please retry complete-upload.",
+        ) from exc
 
     eta = now + timedelta(seconds=45)
     return clip_model_to_response(clip, estimated_analysis_completion_at=eta)

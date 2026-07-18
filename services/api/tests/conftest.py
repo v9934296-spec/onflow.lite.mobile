@@ -209,10 +209,14 @@ def submit_clip_via_presigned(
     client: TestClient,
     headers: dict[str, str],
     *,
-    video_bytes: bytes = b"fake-mp4-bytes",
+    video_bytes: bytes | None = None,
     client_hint_trick_id: str | None = None,
 ) -> str:
     """Initiate presigned upload, write bytes locally, complete — returns job/clip id."""
+    from app.services.video_signature import MINIMAL_VIDEO_SNIFF_BYTES
+
+    if video_bytes is None:
+        video_bytes = MINIMAL_VIDEO_SNIFF_BYTES
     payload = {
         **_UPLOAD_INIT_BODY,
         "size_bytes": max(len(video_bytes), 1),

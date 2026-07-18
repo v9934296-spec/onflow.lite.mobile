@@ -389,18 +389,26 @@ async def run_clip_job(
     engine = get_engine()
     t_job = time.perf_counter()
     try:
-        job = repo.get(job_id)
-        if job is None:
-            logger.warning("event=clip_job_failed reason=missing_record")
-            return
+        # CAS claim pending → processing so concurrent ARQ deliveries do not
+        # both run Gemini. Terminal / lost-claim returns None (skip).
+        claim = getattr(repo, "try_claim_for_processing", None)
+        if callable(claim):
+            job = claim(job_id)
+        else:
+            job = repo.get(job_id)
+            if job is not None and job.status not in ("completed", "failed"):
+                job.with_status("processing")
+                repo.update(job)
 
-        # Idempotency short-circuit: a redelivered or duplicate-enqueued job that
-        # already finished must not re-run Gemini or burn quota a second time.
-        if job.status in ("completed", "failed"):
-            logger.info(
-                "event=clip_job_skipped reason=already_terminal status=%s",
-                job.status,
-            )
+        if job is None:
+            existing = repo.get(job_id)
+            if existing is None:
+                logger.warning("event=clip_job_failed reason=missing_record")
+            else:
+                logger.info(
+                    "event=clip_job_skipped reason=unclaimed_or_terminal status=%s",
+                    existing.status,
+                )
             return
 
         logger.info(
@@ -408,9 +416,6 @@ async def run_clip_job(
             os.path.basename(file_path),
         )
         log_beta("beta_job_started", job_id=job_id)
-
-        job.with_status("processing")
-        repo.update(job)
 
         await asyncio.sleep(0.02)
 

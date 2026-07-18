@@ -27,7 +27,7 @@ from app.core.tiers import normalize_tier, tier_has_unlimited_analyses
 from app.models import get_analyses_remaining
 from app.routers.consent import consent_status_from_user
 from app.schemas.consent import ConsentStatus
-from app.services.deletion_queue import enqueue_hard_delete
+from app.services.deletion_queue import enqueue_hard_delete, list_v1_clip_storage_keys
 
 router = APIRouter(prefix="/api/v1/account", tags=["account"])
 
@@ -144,10 +144,18 @@ async def delete_my_account(
     if u.pending_deletion_at is not None:
         return _account_deletion_queued_response()
     enforce_delete_account_rate_limit(user_id)
+    # Capture V1 object keys BEFORE purge_user_owned_rows drops clip rows.
+    # Pending uploads often have storage_key with no clip_jobs row; without this
+    # the hard-delete worker would leave orphaned media in object storage.
+    v1_storage_keys = list_v1_clip_storage_keys(user_id)
     db.purge_user_owned_rows(user_id)
     db.delete_sessions_for_user(user_id)
     db.anonymize_user_for_deletion(user_id)
-    await enqueue_hard_delete(user_id, datetime.now(timezone.utc))
+    await enqueue_hard_delete(
+        user_id,
+        datetime.now(timezone.utc),
+        extra_storage_keys=v1_storage_keys,
+    )
     return _account_deletion_queued_response()
 
 
@@ -159,35 +167,12 @@ def export_my_data(
 ) -> dict:
     db = request.app.state.db
     repo = request.app.state.repo
-    u = db.get_user(user_id)
-    if u is None:
-        raise HTTPException(status_code=404, detail="User not found.")
-    # A data export must be COMPLETE (GDPR/CCPA): stream every one of the user's
-    # own rows in bounded batches rather than silently truncating. (The prior
-    # list_full_for_user(limit=500) call was additionally capped to 100 rows by
-    # the repository's safety guard, so users with >100 clips got a partial
-    # export.) For a history that fits in one batch this is still a single SELECT.
-    jobs: list[dict] = [
-        {
-            "job_id": rec.id,
-            "status": rec.status,
-            "clip_label": rec.clip_label,
-            "created_at": rec.created_at.isoformat().replace("+00:00", "Z"),
-            "failure_reason": rec.failure_reason,
-            "result": rec.result_json,
-            "clip_metadata": rec.clip_metadata,
-        }
-        for rec in repo.iter_all_for_user(user_id)
-    ]
-    generated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    return {
-        "user": {"id": u.id, "email": u.email, "tier": u.tier},
-        "consent": consent_status_from_user(u).model_dump(),
-        "clips": jobs,
-        "consent_events": db.list_consent_events(user_id),
-        "export_generated_at": generated_at,
-        "policy_version_at_export": "v1_2026_04_14",
-    }
+    from app.services.account_export import build_account_export
+
+    try:
+        return build_account_export(user_id, identity=db, repo=repo)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="User not found.") from exc
 
 
 @router.get("/quota", response_model=AccountQuotaResponse)

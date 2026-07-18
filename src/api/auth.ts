@@ -10,6 +10,11 @@ export function setAuthTokenProvider(provider: AuthTokenProvider | null): void {
   authTokenProvider = provider;
 }
 
+/** Current token provider (used by analytics fire-and-forget). */
+export function getAuthTokenProvider(): AuthTokenProvider | null {
+  return authTokenProvider;
+}
+
 /** Register a callback that fires when any authed API call gets a 401. */
 export function setAuthExpiredCallback(cb: (() => void) | null): void {
   onAuthExpired = cb;
