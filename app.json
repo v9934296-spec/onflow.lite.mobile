@@ -13,6 +13,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.onflow.lite",
       "buildNumber": "1",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "OnFlow Lite uses the camera to film skate clips for analysis.",
         "NSMicrophoneUsageDescription": "OnFlow Lite records audio with your skate clips.",
@@ -31,7 +32,8 @@
     "plugins": [
       "expo-router",
       "expo-asset",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {
