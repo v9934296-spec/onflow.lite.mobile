@@ -68,7 +68,7 @@ export function Btn({
   variant?: "volt" | "ghost" | "red";
   disabled?: boolean;
 }) {
-  const bg = variant === "volt" ? C.volt : variant === "red" ? C.red : "transparent";
+  const bg = variant === "volt" ? C.volt : variant === "red" ? C.red : C.charcoal2;
   const fg = variant === "volt" ? C.charcoal : C.offwhite;
   return (
     <Pressable
@@ -76,8 +76,8 @@ export function Btn({
       disabled={disabled}
       style={({ pressed }) => [
         s.btn,
-        { backgroundColor: bg, opacity: disabled ? 0.35 : pressed ? 0.75 : 1 },
-        variant === "ghost" ? { borderWidth: 1, borderColor: C.aluminum } : null,
+        { backgroundColor: bg, opacity: disabled ? 0.35 : pressed ? 0.78 : 1 },
+        variant === "ghost" ? s.ghostBtn : null,
       ]}
     >
       <Text style={[s.btnText, { color: fg }]}>{label}</Text>
@@ -123,7 +123,7 @@ export function WeekRow({ days }: { days: DaySlot[] }) {
                 ? { backgroundColor: C.volt }
                 : d.status === "bailed"
                   ? { backgroundColor: C.red }
-                  : { backgroundColor: C.charcoal3, borderWidth: 1, borderColor: C.aluminum },
+                  : { backgroundColor: C.charcoal3, borderWidth: 1, borderColor: C.dim },
             ]}
           />
           <Text style={s.weekLabel}>{d.label}</Text>
@@ -137,34 +137,45 @@ const s = StyleSheet.create({
   eyebrow: { fontFamily: F.mono, fontSize: 11, letterSpacing: 1.4 },
   card: {
     backgroundColor: C.charcoal2,
-    borderWidth: 1,
-    borderColor: C.aluminum,
-    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal3,
+    borderRadius: 12,
     padding: 16,
     gap: 6,
   },
   tag: {
     borderWidth: 1,
-    borderRadius: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    borderRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     alignSelf: "flex-start",
   },
   tagText: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8 },
-  btn: { borderRadius: 8, paddingVertical: 15, alignItems: "center" },
+  btn: {
+    minHeight: 52,
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 15,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ghostBtn: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal3,
+  },
   btnText: { fontFamily: F.bold, fontSize: 15 },
   liteBanner: {
     backgroundColor: C.charcoal2,
-    borderWidth: 1,
-    borderColor: C.amber,
+    borderLeftWidth: 3,
+    borderLeftColor: C.amber,
     borderRadius: 8,
     padding: 10,
   },
   liteBannerText: { fontFamily: F.mono, fontSize: 10, color: C.amber, lineHeight: 15 },
   storageWarning: {
     backgroundColor: C.charcoal2,
-    borderWidth: 1,
-    borderColor: C.red,
+    borderLeftWidth: 3,
+    borderLeftColor: C.red,
     borderRadius: 8,
     padding: 10,
     gap: 4,
@@ -182,10 +193,10 @@ const s = StyleSheet.create({
     fontSize: 14,
     color: C.offwhite,
     backgroundColor: C.charcoal2,
-    borderWidth: 1,
-    borderColor: C.aluminum,
-    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal3,
+    borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
   },
 });
