@@ -2,8 +2,10 @@ export const C = {
   charcoal: "#1A1A1C",
   charcoal2: "#232326",
   charcoal3: "#2C2C30",
-  volt: "#B8F035",
-  red: "#D42B2B",
+  // OnFlow production accents carried forward from onflow.skate.
+  // Green = progression / primary action. Red-pink = tension / battle / emphasis.
+  volt: "#54FF00",
+  red: "#FF0044",
   amber: "#D4A03A",
   offwhite: "#F0EDED",
   dim: "#8A8A90",
