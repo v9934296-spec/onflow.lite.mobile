@@ -4,25 +4,26 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppNav } from "../src/components/AppNav";
 import { fetchProgressionTimeline, type ProgressionTimelineItem } from "../src/api/progressionApi";
 import { RatingLine } from "../src/charts";
-import { getBestTrickStreak, getLast7Days } from "../src/progress";
+import type { DaySlot } from "../src/progress";
 import { useSession } from "../src/session";
+import { useSkateSession } from "../src/skateSession/skateSessionContext";
+import { useSessionHistory } from "../src/sessionHistory/useSessionHistory";
 import { C, F } from "../src/theme";
 import { Card, Eyebrow, WeekRow } from "../src/ui";
 
-function pct(n: number, d: number): string {
-  return d > 0 ? `${Math.round((n / d) * 100)}%` : "—";
-}
-
+function pct(n: number, d: number): string { return d > 0 ? `${Math.round((n / d) * 100)}%` : "—"; }
+function dateKey(value: Date): string { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`; }
 function shortDate(value: string | null): string {
   if (!value) return "Recent";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "Recent";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return Number.isNaN(d.getTime()) ? "Recent" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export default function PteFlowScreen() {
   const insets = useSafeAreaInsets();
-  const { log, attempts } = useSession();
+  const { log } = useSession();
+  const { activeSession } = useSkateSession();
+  const { sessions } = useSessionHistory(activeSession?.id ?? null);
   const [timeline, setTimeline] = useState<ProgressionTimelineItem[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(true);
   const [timelineError, setTimelineError] = useState<string | null>(null);
@@ -32,92 +33,82 @@ export default function PteFlowScreen() {
     setTimelineLoading(true);
     void fetchProgressionTimeline(1, 20).then((result) => {
       if (cancelled) return;
-      if (result.ok) {
-        setTimeline(result.data.items);
-        setTimelineError(null);
-      } else {
-        setTimelineError(result.error.message);
-      }
+      if (result.ok) { setTimeline(result.data.items); setTimelineError(null); }
+      else setTimelineError(result.error.message);
       setTimelineLoading(false);
     });
     return () => { cancelled = true; };
   }, []);
 
-  const localRatings = useMemo(
-    () => log.filter((entry) => entry.analysis.source === "user" && entry.analysis.rating != null).map((entry) => entry.analysis.rating as number).slice(-12),
-    [log],
-  );
-  const backendRatings = useMemo(
-    () => [...timeline].reverse().map((item) => item.best_pte_score).filter((score): score is number => score != null).slice(-12),
-    [timeline],
-  );
+  const localRatings = useMemo(() => log.filter((entry) => entry.analysis.source === "user" && entry.analysis.rating != null).map((entry) => entry.analysis.rating as number).slice(-12), [log]);
+  const backendRatings = useMemo(() => [...timeline].reverse().map((item) => item.best_pte_score).filter((score): score is number => score != null).slice(-12), [timeline]);
   const ratings = backendRatings.length ? backendRatings : localRatings;
-  const week = useMemo(() => getLast7Days(attempts), [attempts]);
-  const bestStreak = useMemo(() => getBestTrickStreak(attempts), [attempts]);
+
   const stats = useMemo(() => {
-    const landed = attempts.filter((a) => a.manualOutcome === "landed" || a.landed).length;
+    let total = 0;
+    let landed = 0;
     const byTrick = new Map<string, { entries: number; lands: number }>();
-    for (const a of attempts) {
-      const row = byTrick.get(a.trick) ?? { entries: 0, lands: 0 };
-      row.entries += 1;
-      if (a.manualOutcome === "landed" || a.landed) row.lands += 1;
-      byTrick.set(a.trick, row);
+    for (const session of sessions) {
+      total += session.attempts_count;
+      landed += session.landed_count;
+      for (const row of session.trick_breakdown) {
+        const current = byTrick.get(row.canonicalName) ?? { entries: 0, lands: 0 };
+        current.entries += row.total;
+        current.lands += row.landed;
+        byTrick.set(row.canonicalName, current);
+      }
     }
     const tricks = [...byTrick.entries()].map(([trick, row]) => ({ trick, ...row })).sort((a, b) => b.entries - a.entries).slice(0, 5);
-    return { landed, entries: attempts.length, tricks };
-  }, [attempts]);
+    return { total, landed, tricks };
+  }, [sessions]);
+
+  const week = useMemo<DaySlot[]>(() => {
+    const sessionByDay = new Map<string, { attempted: boolean; landed: boolean }>();
+    for (const session of sessions) {
+      const key = dateKey(new Date(session.ended_at));
+      const current = sessionByDay.get(key) ?? { attempted: false, landed: false };
+      current.attempted = current.attempted || session.attempts_count > 0;
+      current.landed = current.landed || session.landed_count > 0;
+      sessionByDay.set(key, current);
+    }
+    const slots: DaySlot[] = [];
+    for (let daysAgo = 6; daysAgo >= 0; daysAgo--) {
+      const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - daysAgo);
+      const row = sessionByDay.get(dateKey(d));
+      slots.push({ date: dateKey(d), label: d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(), status: row?.landed ? "landed" : row?.attempted ? "bailed" : "none" });
+    }
+    return slots;
+  }, [sessions]);
+
+  const momentum = useMemo(() => {
+    const top = stats.tricks[0];
+    return top ? { trick: top.trick, rate: pct(top.lands, top.entries), entries: top.entries } : null;
+  }, [stats.tricks]);
 
   return (
     <View style={[s.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}> 
       <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <View style={s.header}>
-          <Eyebrow color={C.volt}>PTE.FLOW</Eyebrow>
-          <Text style={s.title}>Progress you can prove.</Text>
-          <Text style={s.sub}>Manual consistency and video evidence stay separate. PTE only scores what the footage can actually support.</Text>
-        </View>
+        <View style={s.header}><Eyebrow color={C.volt}>PTE.FLOW</Eyebrow><Text style={s.title}>Progress you can prove.</Text><Text style={s.sub}>Self-reported consistency and video evidence stay separate. PTE only scores what the footage can actually support.</Text></View>
 
         <View style={s.metricRow}>
-          <View style={s.metric}><Text style={s.metricValue}>{stats.entries}</Text><Text style={s.metricLabel}>LOGGED</Text></View>
+          <View style={s.metric}><Text style={s.metricValue}>{stats.total}</Text><Text style={s.metricLabel}>ATTEMPTS</Text></View>
           <View style={s.metric}><Text style={s.metricValue}>{stats.landed}</Text><Text style={s.metricLabel}>LANDS</Text></View>
-          <View style={s.metric}><Text style={s.metricValue}>{pct(stats.landed, stats.entries)}</Text><Text style={s.metricLabel}>LAND RATE</Text></View>
+          <View style={s.metric}><Text style={s.metricValue}>{pct(stats.landed, stats.total)}</Text><Text style={s.metricLabel}>LAND RATE</Text></View>
         </View>
 
-        <Card accent={C.volt}>
-          <Eyebrow color={C.volt}>CONSISTENCY / LAST 7 DAYS</Eyebrow>
-          <WeekRow days={week} />
-          <Text style={s.note}>Green = at least one reported land. Pink = attempts logged without a land. Habit data never masquerades as a PTE score.</Text>
-        </Card>
+        <Card accent={C.volt}><Eyebrow color={C.volt}>CONSISTENCY / LAST 7 DAYS</Eyebrow><WeekRow days={week} /><Text style={s.note}>Green = a completed session with a reported land. Pink = attempts without a land. This is session consistency, not a PTE score.</Text></Card>
 
         <Card>
           <Eyebrow color={C.volt}>VIDEO PTE TREND</Eyebrow>
-          {timelineLoading && !ratings.length ? <View style={s.loading}><ActivityIndicator color={C.volt} /><Text style={s.note}>Loading progression evidence…</Text></View> : ratings.length ? (
-            <><RatingLine ratings={ratings} /><Text style={s.note}>Plotted from analyzed clip/session PTE results only. No usable evidence means no invented score.</Text></>
-          ) : (
-            <View style={s.empty}><Text style={s.emptyTitle}>No video-rated attempts yet.</Text><Text style={s.note}>Film attempts from Flow. Once a clip supports a rating, the trend appears here.</Text></View>
-          )}
-          {timelineError ? <Text style={s.apiNote}>Progression sync unavailable right now. Showing on-device evidence where available.</Text> : null}
+          {timelineLoading && !ratings.length ? <View style={s.loading}><ActivityIndicator color={C.volt} /><Text style={s.note}>Loading progression evidence…</Text></View> : ratings.length ? <><RatingLine ratings={ratings} /><Text style={s.note}>Plotted from analyzed clip/session PTE results only. No usable evidence means no invented score.</Text></> : <View style={s.empty}><Text style={s.emptyTitle}>No video-rated attempts yet.</Text><Text style={s.note}>Film attempts from Flow. Once a clip supports a rating, the trend appears here.</Text></View>}
+          {timelineError ? <Text style={s.apiNote}>Progression sync unavailable right now. Showing on-device history where available.</Text> : null}
         </Card>
 
-        {timeline.length ? (
-          <View style={{ gap: 10 }}>
-            <Eyebrow>RECENT PROGRESSION</Eyebrow>
-            {timeline.slice(0, 5).map((item) => (
-              <View key={item.session_id} style={s.timelineRow}>
-                <View style={{ flex: 1, gap: 2 }}><Text style={s.trickName}>{item.focus_trick ?? "Session"}</Text><Text style={s.note}>{shortDate(item.ended_at)}{item.spot ? ` · ${item.spot}` : ""} · {item.clips_count} clips</Text></View>
-                <Text style={[s.trickRate, item.best_pte_score == null && { color: C.dim }]}>{item.best_pte_score == null ? "—" : item.best_pte_score.toFixed(1)}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
+        {timeline.length ? <View style={{ gap: 10 }}><Eyebrow>RECENT PROGRESSION</Eyebrow>{timeline.slice(0, 5).map((item) => <View key={item.session_id} style={s.timelineRow}><View style={{ flex: 1, gap: 2 }}><Text style={s.trickName}>{item.focus_trick ?? "Session"}</Text><Text style={s.note}>{shortDate(item.ended_at)}{item.spot ? ` · ${item.spot}` : ""} · {item.clips_count} clips</Text></View><Text style={[s.trickRate, item.best_pte_score == null && { color: C.dim }]}>{item.best_pte_score == null ? "—" : item.best_pte_score.toFixed(1)}</Text></View>)}</View> : null}
 
-        <View style={{ gap: 10 }}>
-          <Eyebrow>MOST WORKED TRICKS</Eyebrow>
-          {stats.tricks.length ? stats.tricks.map((row, index) => (
-            <View key={row.trick} style={s.trickRow}><Text style={s.rank}>{String(index + 1).padStart(2, "0")}</Text><View style={{ flex: 1 }}><Text style={s.trickName}>{row.trick}</Text><Text style={s.note}>{row.entries} logs · {row.lands} landed</Text></View><Text style={s.trickRate}>{pct(row.lands, row.entries)}</Text></View>
-          )) : <Text style={s.note}>Log a few attempts in Flow and your trick progression will build here.</Text>}
-        </View>
+        <View style={{ gap: 10 }}><Eyebrow>MOST WORKED TRICKS</Eyebrow>{stats.tricks.length ? stats.tricks.map((row, index) => <View key={row.trick} style={s.trickRow}><Text style={s.rank}>{String(index + 1).padStart(2, "0")}</Text><View style={{ flex: 1 }}><Text style={s.trickName}>{row.trick}</Text><Text style={s.note}>{row.entries} attempts · {row.lands} landed</Text></View><Text style={s.trickRate}>{pct(row.lands, row.entries)}</Text></View>) : <Text style={s.note}>Complete a Flow session and your trick progression will build here.</Text>}</View>
 
-        {bestStreak ? <Card accent={C.red}><Eyebrow color={C.red}>CURRENT MOMENTUM</Eyebrow><Text style={s.focus}>{bestStreak.trick}</Text><Text style={s.sub}>{bestStreak.streak}-day landing streak. Keep the reps honest and let the evidence accumulate.</Text></Card> : null}
+        {momentum ? <Card accent={C.red}><Eyebrow color={C.red}>CURRENT BATTLE CANDIDATE</Eyebrow><Text style={s.focus}>{momentum.trick}</Text><Text style={s.sub}>{momentum.entries} attempts · {momentum.rate} land rate. Your most-worked trick is ready for a focused Battle session.</Text></Card> : null}
       </ScrollView>
       <AppNav />
     </View>
