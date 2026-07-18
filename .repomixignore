@@ -11,12 +11,24 @@
 *.key
 *.p8
 *.p12
+*.pfx
 *.jks
+*.keystore
+*.crt
+*.cer
+*.der
 *.mobileprovision
+id_rsa*
+id_ed25519*
+.ssh/
+.aws/
 
 # Mobile service configs (often contain API keys)
 google-services.json
 GoogleService-Info.plist
+service-account*.json
+serviceAccount*.json
+*credentials*.json
 
 # Build / export artifacts
 dist/
