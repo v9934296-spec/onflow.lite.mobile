@@ -26,7 +26,7 @@ export function Card({
   style?: ViewStyle;
 }) {
   return (
-    <View style={[s.card, accent ? { borderLeftWidth: 4, borderLeftColor: accent } : null, style]}>
+    <View style={[s.card, accent ? { borderLeftWidth: 3, borderLeftColor: accent } : null, style]}>
       {children}
     </View>
   );
@@ -68,15 +68,16 @@ export function Btn({
   variant?: "volt" | "ghost" | "red";
   disabled?: boolean;
 }) {
-  const bg = variant === "volt" ? C.volt : variant === "red" ? C.red : C.charcoal2;
+  const bg = variant === "volt" ? C.volt : variant === "red" ? C.red : "transparent";
   const fg = variant === "volt" ? C.charcoal : C.offwhite;
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
         s.btn,
-        { backgroundColor: bg, opacity: disabled ? 0.35 : pressed ? 0.78 : 1 },
+        { backgroundColor: bg, opacity: disabled ? 0.35 : pressed ? 0.72 : 1 },
         variant === "ghost" ? s.ghostBtn : null,
       ]}
     >
@@ -123,7 +124,7 @@ export function WeekRow({ days }: { days: DaySlot[] }) {
                 ? { backgroundColor: C.volt }
                 : d.status === "bailed"
                   ? { backgroundColor: C.red }
-                  : { backgroundColor: C.charcoal3, borderWidth: 1, borderColor: C.dim },
+                  : { backgroundColor: C.charcoal3, borderWidth: 1, borderColor: C.aluminum },
             ]}
           />
           <Text style={s.weekLabel}>{d.label}</Text>
@@ -134,41 +135,42 @@ export function WeekRow({ days }: { days: DaySlot[] }) {
 }
 
 const s = StyleSheet.create({
-  eyebrow: { fontFamily: F.mono, fontSize: 11, letterSpacing: 1.4 },
+  eyebrow: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1.5 },
   card: {
     backgroundColor: C.charcoal2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.charcoal3,
-    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.aluminum,
+    borderRadius: 5,
     padding: 16,
-    gap: 6,
+    gap: 7,
   },
   tag: {
     borderWidth: 1,
-    borderRadius: 4,
+    borderRadius: 3,
     paddingHorizontal: 7,
     paddingVertical: 3,
     alignSelf: "flex-start",
+    backgroundColor: C.charcoal,
   },
   tagText: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8 },
   btn: {
-    minHeight: 52,
-    borderRadius: 12,
+    minHeight: 50,
+    borderRadius: 5,
     paddingHorizontal: 18,
-    paddingVertical: 15,
+    paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   ghostBtn: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.charcoal3,
+    borderWidth: 1,
+    borderColor: C.aluminum,
   },
-  btnText: { fontFamily: F.bold, fontSize: 15 },
+  btnText: { fontFamily: F.bold, fontSize: 14, letterSpacing: 0.2 },
   liteBanner: {
     backgroundColor: C.charcoal2,
     borderLeftWidth: 3,
     borderLeftColor: C.amber,
-    borderRadius: 8,
+    borderRadius: 4,
     padding: 10,
   },
   liteBannerText: { fontFamily: F.mono, fontSize: 10, color: C.amber, lineHeight: 15 },
@@ -176,7 +178,7 @@ const s = StyleSheet.create({
     backgroundColor: C.charcoal2,
     borderLeftWidth: 3,
     borderLeftColor: C.red,
-    borderRadius: 8,
+    borderRadius: 4,
     padding: 10,
     gap: 4,
   },
@@ -184,7 +186,7 @@ const s = StyleSheet.create({
   storageWarningDismiss: { fontFamily: F.mono, fontSize: 9, color: C.dim },
   weekRow: { flexDirection: "row", justifyContent: "space-between", gap: 4 },
   weekCell: { alignItems: "center", gap: 6, flex: 1 },
-  weekDot: { width: 14, height: 14, borderRadius: 7 },
+  weekDot: { width: 12, height: 12, borderRadius: 1 },
   weekLabel: { fontFamily: F.mono, fontSize: 9, color: C.dim },
   field: { gap: 6 },
   fieldLabel: { fontFamily: F.mono, fontSize: 10, color: C.dim, letterSpacing: 0.8 },
@@ -192,10 +194,10 @@ const s = StyleSheet.create({
     fontFamily: F.body,
     fontSize: 14,
     color: C.offwhite,
-    backgroundColor: C.charcoal2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.charcoal3,
-    borderRadius: 10,
+    backgroundColor: C.charcoal,
+    borderWidth: 1,
+    borderColor: C.aluminum,
+    borderRadius: 4,
     paddingHorizontal: 12,
     paddingVertical: 11,
   },

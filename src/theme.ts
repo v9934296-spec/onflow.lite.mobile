@@ -1,15 +1,17 @@
 export const C = {
-  charcoal: "#1A1A1C",
-  charcoal2: "#232326",
-  charcoal3: "#2C2C30",
-  // OnFlow production accents carried forward from onflow.skate.
-  // Green = progression / primary action. Red-pink = tension / battle / emphasis.
+  // Near-black production foundation. Keep surfaces dark enough that the accents
+  // read as signal, not decoration.
+  charcoal: "#050506",
+  charcoal2: "#0B0B0E",
+  charcoal3: "#16161B",
+  // Locked OnFlow accents carried forward from onflow.skate.
+  // Green = progression / primary action. Pink-red = battle / tension / emphasis.
   volt: "#54FF00",
   red: "#FF0044",
   amber: "#D4A03A",
-  offwhite: "#F0EDED",
-  dim: "#8A8A90",
-  aluminum: "#9EA1A6",
+  offwhite: "#F3F1F1",
+  dim: "#8B8B95",
+  aluminum: "#34343C",
 } as const;
 
 export const F = {
