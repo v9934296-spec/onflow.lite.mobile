@@ -96,11 +96,14 @@ class S3Storage:
         self._bucket = bucket
         self._temp = Path(temp_dir)
         self._temp.mkdir(parents=True, exist_ok=True)
+        # region_name="auto" is required for Cloudflare R2; without it, presigned
+        # PUTs often fail with HTTP 401 Unauthorized (signature mismatch).
         self._s3 = boto3.client(
             "s3",
             endpoint_url=endpoint_url,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
+            region_name="auto",
         )
 
     async def put(self, key: str, data: BinaryIO, content_type: str = "video/mp4") -> str:
