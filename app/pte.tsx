@@ -1,139 +1,256 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppNav } from "../src/components/AppNav";
-import { fetchProgressionTimeline, type ProgressionTimelineItem } from "../src/api/progressionApi";
+import { MomentumChip } from "../src/components/MomentumChip";
+import { TrickCard } from "../src/components/TrickCard";
+import {
+  fetchProgressionOverview,
+  fetchProgressionTimeline,
+  fetchTrickStats,
+  fetchWhatsNext,
+  type ProgressionOverview,
+  type ProgressionTimelineItem,
+  type WhatsNextPayload,
+} from "../src/api/progressionApi";
 import { RatingLine } from "../src/charts";
+import { adaptTrickStats, formatTrickDisplay } from "../src/yourFlowAdapter";
+import { C, F, SPACE } from "../src/theme";
+import { Card, Eyebrow, SkeletonLines, WeekRow } from "../src/ui";
 import type { DaySlot } from "../src/progress";
-import { useSession } from "../src/session";
-import { useSkateSession } from "../src/skateSession/skateSessionContext";
-import { useSessionHistory } from "../src/sessionHistory/useSessionHistory";
-import { C, F } from "../src/theme";
-import { Card, Eyebrow, WeekRow } from "../src/ui";
 
-function pct(n: number, d: number): string { return d > 0 ? `${Math.round((n / d) * 100)}%` : "—"; }
-function dateKey(value: Date): string { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`; }
-function shortDate(value: string | null): string {
-  if (!value) return "Recent";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? "Recent" : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+function dateKey(value: Date): string {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
 export default function PteFlowScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { log } = useSession();
-  const { activeSession } = useSkateSession();
-  const { sessions } = useSessionHistory(activeSession?.id ?? null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [overview, setOverview] = useState<ProgressionOverview | null>(null);
+  const [whatsNext, setWhatsNext] = useState<WhatsNextPayload | null>(null);
   const [timeline, setTimeline] = useState<ProgressionTimelineItem[]>([]);
-  const [timelineLoading, setTimelineLoading] = useState(true);
-  const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [tricks, setTricks] = useState(adaptTrickStats([]));
 
-  useEffect(() => {
-    let cancelled = false;
-    setTimelineLoading(true);
-    void fetchProgressionTimeline(1, 20).then((result) => {
-      if (cancelled) return;
-      if (result.ok) { setTimeline(result.data.items); setTimelineError(null); }
-      else setTimelineError(result.error.message);
-      setTimelineLoading(false);
-    });
-    return () => { cancelled = true; };
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+    const [ov, wn, tl, ts] = await Promise.all([
+      fetchProgressionOverview(),
+      fetchWhatsNext(),
+      fetchProgressionTimeline(1, 20),
+      fetchTrickStats(),
+    ]);
+    if (!ov.ok && !ts.ok) {
+      setError(ov.ok === false ? ov.error.message : "Could not load PTE.");
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+    setOverview(ov.ok ? ov.data : null);
+    setWhatsNext(wn.ok ? wn.data : null);
+    setTimeline(tl.ok ? tl.data.items : []);
+    setTricks(ts.ok ? adaptTrickStats(ts.data) : []);
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
-  const localRatings = useMemo(() => log.filter((entry) => entry.analysis.source === "user" && entry.analysis.rating != null).map((entry) => entry.analysis.rating as number).slice(-12), [log]);
-  const backendRatings = useMemo(() => [...timeline].reverse().map((item) => item.best_pte_score).filter((score): score is number => score != null).slice(-12), [timeline]);
-  const ratings = backendRatings.length ? backendRatings : localRatings;
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const stats = useMemo(() => {
-    let total = 0;
-    let landed = 0;
-    const byTrick = new Map<string, { entries: number; lands: number }>();
-    for (const session of sessions) {
-      total += session.attempts_count;
-      landed += session.landed_count;
-      for (const row of session.trick_breakdown) {
-        const current = byTrick.get(row.canonicalName) ?? { entries: 0, lands: 0 };
-        current.entries += row.total;
-        current.lands += row.landed;
-        byTrick.set(row.canonicalName, current);
-      }
-    }
-    const tricks = [...byTrick.entries()].map(([trick, row]) => ({ trick, ...row })).sort((a, b) => b.entries - a.entries).slice(0, 5);
-    return { total, landed, tricks };
-  }, [sessions]);
+  const ratings = useMemo(
+    () =>
+      [...timeline]
+        .reverse()
+        .map((item) => item.best_pte_score)
+        .filter((score): score is number => score != null)
+        .slice(-12),
+    [timeline],
+  );
 
   const week = useMemo<DaySlot[]>(() => {
-    const sessionByDay = new Map<string, { attempted: boolean; landed: boolean }>();
-    for (const session of sessions) {
-      const key = dateKey(new Date(session.ended_at));
-      const current = sessionByDay.get(key) ?? { attempted: false, landed: false };
-      current.attempted = current.attempted || session.attempts_count > 0;
-      current.landed = current.landed || session.landed_count > 0;
-      sessionByDay.set(key, current);
+    const byDay = new Map<string, { attempted: boolean; landed: boolean }>();
+    for (const item of timeline) {
+      if (!item.ended_at) continue;
+      const key = dateKey(new Date(item.ended_at));
+      const current = byDay.get(key) ?? { attempted: false, landed: false };
+      current.attempted = true;
+      current.landed = current.landed || (item.best_pte_score != null && item.best_pte_score >= 6);
+      byDay.set(key, current);
     }
     const slots: DaySlot[] = [];
     for (let daysAgo = 6; daysAgo >= 0; daysAgo--) {
-      const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - daysAgo);
-      const row = sessionByDay.get(dateKey(d));
-      slots.push({ date: dateKey(d), label: d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(), status: row?.landed ? "landed" : row?.attempted ? "bailed" : "none" });
+      const d = new Date();
+      d.setHours(12, 0, 0, 0);
+      d.setDate(d.getDate() - daysAgo);
+      const row = byDay.get(dateKey(d));
+      slots.push({
+        date: dateKey(d),
+        label: d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase(),
+        status: row?.landed ? "landed" : row?.attempted ? "bailed" : "none",
+      });
     }
     return slots;
-  }, [sessions]);
-
-  const momentum = useMemo(() => {
-    const top = stats.tricks[0];
-    return top ? { trick: top.trick, rate: pct(top.lands, top.entries), entries: top.entries } : null;
-  }, [stats.tricks]);
+  }, [timeline]);
 
   return (
-    <View style={[s.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}> 
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <View style={s.header}><Eyebrow color={C.volt}>PTE.FLOW</Eyebrow><Text style={s.title}>Progress you can prove.</Text><Text style={s.sub}>Self-reported consistency and video evidence stay separate. PTE only scores what the footage can actually support.</Text></View>
-
-        <View style={s.metricRow}>
-          <View style={s.metric}><Text style={s.metricValue}>{stats.total}</Text><Text style={s.metricLabel}>ATTEMPTS</Text></View>
-          <View style={s.metric}><Text style={s.metricValue}>{stats.landed}</Text><Text style={s.metricLabel}>LANDS</Text></View>
-          <View style={s.metric}><Text style={s.metricValue}>{pct(stats.landed, stats.total)}</Text><Text style={s.metricLabel}>LAND RATE</Text></View>
+    <View style={[s.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={s.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={C.volt} />
+        }
+      >
+        <View style={s.header}>
+          <Text style={s.title}>PTE.Flow</Text>
+          <Text style={s.sub}>Evidence, momentum, and what to fight next.</Text>
         </View>
 
-        <Card accent={C.volt}><Eyebrow color={C.volt}>CONSISTENCY / LAST 7 DAYS</Eyebrow><WeekRow days={week} /><Text style={s.note}>Green = a completed session with a reported land. Pink = attempts without a land. This is session consistency, not a PTE score.</Text></Card>
+        {loading ? (
+          <Card>
+            <SkeletonLines />
+          </Card>
+        ) : null}
 
-        <Card>
-          <Eyebrow color={C.volt}>VIDEO PTE TREND</Eyebrow>
-          {timelineLoading && !ratings.length ? <View style={s.loading}><ActivityIndicator color={C.volt} /><Text style={s.note}>Loading progression evidence…</Text></View> : ratings.length ? <><RatingLine ratings={ratings} /><Text style={s.note}>Plotted from analyzed clip/session PTE results only. No usable evidence means no invented score.</Text></> : <View style={s.empty}><Text style={s.emptyTitle}>No video-rated attempts yet.</Text><Text style={s.note}>Film attempts from Flow. Once a clip supports a rating, the trend appears here.</Text></View>}
-          {timelineError ? <Text style={s.apiNote}>Progression sync unavailable right now. Showing on-device history where available.</Text> : null}
-        </Card>
+        {error ? (
+          <Card accent={C.red}>
+            <Text style={s.error}>{error}</Text>
+            <Pressable onPress={() => void load()}>
+              <Text style={s.retry}>Tap to retry</Text>
+            </Pressable>
+          </Card>
+        ) : null}
 
-        {timeline.length ? <View style={{ gap: 10 }}><Eyebrow>RECENT PROGRESSION</Eyebrow>{timeline.slice(0, 5).map((item) => <View key={item.session_id} style={s.timelineRow}><View style={{ flex: 1, gap: 2 }}><Text style={s.trickName}>{item.focus_trick ?? "Session"}</Text><Text style={s.note}>{shortDate(item.ended_at)}{item.spot ? ` · ${item.spot}` : ""} · {item.clips_count} clips</Text></View><Text style={[s.trickRate, item.best_pte_score == null && { color: C.dim }]}>{item.best_pte_score == null ? "—" : item.best_pte_score.toFixed(1)}</Text></View>)}</View> : null}
+        {!loading && !error ? (
+          <>
+            {whatsNext ? (
+              <Card accent={whatsNext.has_recommendation ? C.volt : C.muted}>
+                <Eyebrow color={C.volt}>WHAT'S NEXT</Eyebrow>
+                <Text style={s.cardTitle}>
+                  {whatsNext.focus_trick
+                    ? formatTrickDisplay(whatsNext.focus_trick)
+                    : "Build the dataset"}
+                </Text>
+                <Text style={s.cardSub}>{whatsNext.message}</Text>
+                {whatsNext.focus_drill ? (
+                  <Text style={s.drill}>Drill: {whatsNext.focus_drill}</Text>
+                ) : null}
+                {whatsNext.focus_cue ? <Text style={s.cue}>Cue: {whatsNext.focus_cue}</Text> : null}
+              </Card>
+            ) : null}
 
-        <View style={{ gap: 10 }}><Eyebrow>MOST WORKED TRICKS</Eyebrow>{stats.tricks.length ? stats.tricks.map((row, index) => <View key={row.trick} style={s.trickRow}><Text style={s.rank}>{String(index + 1).padStart(2, "0")}</Text><View style={{ flex: 1 }}><Text style={s.trickName}>{row.trick}</Text><Text style={s.note}>{row.entries} attempts · {row.lands} landed</Text></View><Text style={s.trickRate}>{pct(row.lands, row.entries)}</Text></View>) : <Text style={s.note}>Complete a Flow session and your trick progression will build here.</Text>}</View>
+            {overview ? (
+              <Card>
+                <Eyebrow>OVERVIEW</Eyebrow>
+                <View style={s.metrics}>
+                  <Metric label="Make rate" value={`${Math.round(overview.global_make_rate)}%`} />
+                  <Metric label="Attempts" value={String(overview.total_attempts)} />
+                  <Metric label="Tricks" value={String(overview.total_tricks_attempted)} />
+                  <Metric label="Streak" value={String(overview.current_streak)} />
+                </View>
+              </Card>
+            ) : null}
 
-        {momentum ? <Card accent={C.red}><Eyebrow color={C.red}>CURRENT BATTLE CANDIDATE</Eyebrow><Text style={s.focus}>{momentum.trick}</Text><Text style={s.sub}>{momentum.entries} attempts · {momentum.rate} land rate. Your most-worked trick is ready for a focused Battle session.</Text></Card> : null}
+            <Card>
+              <Eyebrow>THIS WEEK</Eyebrow>
+              <WeekRow days={week} />
+            </Card>
+
+            {ratings.length > 1 ? (
+              <Card>
+                <Eyebrow>PTE TREND</Eyebrow>
+                <RatingLine ratings={ratings} />
+              </Card>
+            ) : null}
+
+            {tricks.length > 0 ? (
+              <View style={s.section}>
+                <Text style={s.sectionTitle}>TRICK MOMENTUM</Text>
+                {tricks.slice(0, 8).map((trick) => (
+                  <Card key={trick.trick_id} style={s.trickRow}>
+                    <View style={{ flex: 1, gap: 6 }}>
+                      <Text style={s.trickName}>{trick.display_name}</Text>
+                      <Text style={s.trickMeta}>{trick.make_rate_pct}% make rate</Text>
+                      {trick.momentum_state ? (
+                        <MomentumChip state={trick.momentum_state} size="sm" />
+                      ) : null}
+                    </View>
+                    <Text style={s.arrow}>→</Text>
+                  </Card>
+                ))}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.cards}>
+                  {tricks.slice(0, 6).map((trick) => (
+                    <TrickCard key={`card-${trick.trick_id}`} trick={trick} onPress={() => undefined} />
+                  ))}
+                </ScrollView>
+              </View>
+            ) : (
+              <Card>
+                <Text style={s.cardSub}>No trick evidence yet. Film sessions to fill PTE.Flow.</Text>
+              </Card>
+            )}
+
+            <Pressable onPress={() => router.push("/history" as never)}>
+              <Text style={s.link}>Open full history →</Text>
+            </Pressable>
+          </>
+        ) : null}
       </ScrollView>
       <AppNav />
     </View>
   );
 }
 
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={s.metric}>
+      <Text style={s.metricValue}>{value}</Text>
+      <Text style={s.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
-  content: { paddingHorizontal: 24, paddingTop: 16, paddingBottom: 28, gap: 18 },
+  content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, gap: SPACE.lg },
   header: { gap: 8 },
   title: { fontFamily: F.heading, fontSize: 34, lineHeight: 38, color: C.offwhite },
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
-  metricRow: { flexDirection: "row", gap: 8 },
-  metric: { flex: 1, backgroundColor: C.charcoal2, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10 },
-  metricValue: { fontFamily: F.heading, fontSize: 23, color: C.offwhite },
-  metricLabel: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8, color: C.dim, marginTop: 3 },
-  note: { fontFamily: F.body, fontSize: 12, lineHeight: 18, color: C.dim },
-  apiNote: { fontFamily: F.mono, fontSize: 9, lineHeight: 14, color: C.red, marginTop: 4 },
-  loading: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 14 },
-  empty: { paddingVertical: 14, gap: 5 },
-  emptyTitle: { fontFamily: F.bold, fontSize: 15, color: C.offwhite },
-  trickRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.charcoal2, borderRadius: 12, padding: 14 },
-  timelineRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.charcoal2, borderRadius: 12, padding: 14, borderLeftWidth: 3, borderLeftColor: C.volt },
-  rank: { fontFamily: F.mono, color: C.red, fontSize: 11 },
-  trickName: { fontFamily: F.bold, color: C.offwhite, fontSize: 15 },
-  trickRate: { fontFamily: F.heading, color: C.volt, fontSize: 18 },
-  focus: { fontFamily: F.heading, fontSize: 26, color: C.offwhite, marginTop: 4 },
+  error: { fontFamily: F.body, color: C.offwhite },
+  retry: { fontFamily: F.bold, color: C.volt, marginTop: 8 },
+  cardTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite },
+  cardSub: { fontFamily: F.body, fontSize: 14, lineHeight: 20, color: C.dim },
+  drill: { fontFamily: F.medium, fontSize: 13, color: C.offwhite },
+  cue: { fontFamily: F.mono, fontSize: 12, color: C.volt },
+  metrics: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.md },
+  metric: { width: "45%", gap: 2 },
+  metricValue: { fontFamily: F.monoBold, fontSize: 22, color: C.offwhite },
+  metricLabel: { fontFamily: F.mono, fontSize: 11, color: C.dim, textTransform: "uppercase" },
+  section: { gap: SPACE.md },
+  sectionTitle: {
+    fontFamily: F.medium,
+    fontSize: 12,
+    letterSpacing: 0.8,
+    color: C.dim,
+    textTransform: "uppercase",
+  },
+  trickRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  trickName: { fontFamily: F.bold, fontSize: 16, color: C.offwhite },
+  trickMeta: { fontFamily: F.mono, fontSize: 11, color: C.dim },
+  arrow: { fontFamily: F.bold, color: C.dim, fontSize: 18 },
+  cards: { gap: SPACE.md },
+  link: { fontFamily: F.bold, color: C.volt, fontSize: 14 },
 });

@@ -1,28 +1,47 @@
-import React, { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppNav } from "../src/components/AppNav";
+import { CurrentFocusHeader } from "../src/components/CurrentFocusHeader";
+import { MomentumChip } from "../src/components/MomentumChip";
 import { createSkateSession } from "../src/api/sessionApi";
+import {
+  fetchProgressionTimeline,
+  fetchTrickStats,
+  fetchWhatsNext,
+  type ProgressionTimelineItem,
+} from "../src/api/progressionApi";
 import { saveActiveSessionId } from "../src/activeSessionStore";
-import { useAccount } from "../src/auth/accountContext";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSessionAttempts } from "../src/sessionAttempts/useSessionAttempts";
 import { useSession } from "../src/session";
-import { C, F } from "../src/theme";
-import { Btn, Card, Eyebrow } from "../src/ui";
+import {
+  adaptTrickStats,
+  buildCurrentFocus,
+  formatTrickDisplay,
+  pickActiveBattle,
+} from "../src/yourFlowAdapter";
+import { C, F, RADIUS, SPACE } from "../src/theme";
+import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 
 export default function FlowScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAccount();
-  const userId = user?.user_id ?? null;
-  const { selectedTrick, resetLoop, pendingClipJobId } = useSession();
+  const { selectedTrick, resetLoop } = useSession();
   const {
     activeSession,
     hasActiveSession,
     hydrateState,
-    hydrateError,
     isCreating,
     createError,
     startSession,
@@ -30,26 +49,39 @@ export default function FlowScreen() {
     endSession,
     isEnding,
     endError,
-    dismissEndError,
   } = useSkateSession();
-  const {
-    counts,
-    isSubmitting,
-    submitError,
-    logAttempt,
-    dismissSubmitError,
-  } = useSessionAttempts(activeSession?.id ?? null);
+  const { counts, isSubmitting, submitError, logAttempt } = useSessionAttempts(activeSession?.id ?? null);
   const [startingBattle, setStartingBattle] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRecap, setLastRecap] = useState<ProgressionTimelineItem | null>(null);
+  const [focusReady, setFocusReady] = useState(false);
+  const [focus, setFocus] = useState(buildCurrentFocus(null, []));
+  const [battleTrick, setBattleTrick] = useState<string | null>(null);
 
   const isBattle = activeSession?.notes?.startsWith("[battle]") ?? false;
-  const analysisPending = Boolean(pendingClipJobId);
   const busy = isCreating || startingBattle || isSubmitting || isEnding || hydrateState === "loading";
 
+  const loadHub = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    const [timeline, tricks, whatsNext] = await Promise.all([
+      fetchProgressionTimeline(1, 1),
+      fetchTrickStats(),
+      fetchWhatsNext(),
+    ]);
+    setLastRecap(timeline.ok && timeline.data.items[0] ? timeline.data.items[0] : null);
+    const raw = tricks.ok ? tricks.data : [];
+    const adapted = adaptTrickStats(raw);
+    setFocus(buildCurrentFocus(whatsNext.ok ? whatsNext.data : null, raw));
+    setBattleTrick(pickActiveBattle(adapted)?.display_name ?? null);
+    setFocusReady(true);
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    void loadHub();
+  }, [loadHub]);
+
   async function openSession(mode: "session" | "battle") {
-    if (analysisPending) {
-      router.push("/analyzing" as never);
-      return;
-    }
     if (busy) return;
     if (hasActiveSession) {
       router.push("/trick?returnTo=/flow" as never);
@@ -61,10 +93,6 @@ export default function FlowScreen() {
       if (ok) router.push("/trick?returnTo=/flow" as never);
       return;
     }
-    if (!userId) {
-      Alert.alert("Sign-in required", "Sign in before starting a Battle so the session can be stored under your account.");
-      return;
-    }
 
     setStartingBattle(true);
     try {
@@ -73,14 +101,9 @@ export default function FlowScreen() {
         Alert.alert("Could not start battle", result.error.message);
         return;
       }
-      await saveActiveSessionId(userId, result.data.id);
+      await saveActiveSessionId(result.data.id);
       await refreshActiveSession();
       router.push("/trick?returnTo=/flow" as never);
-    } catch (error) {
-      Alert.alert(
-        "Could not save battle",
-        error instanceof Error ? error.message : "The active Battle could not be stored on this device.",
-      );
     } finally {
       setStartingBattle(false);
     }
@@ -104,116 +127,160 @@ export default function FlowScreen() {
     await finish();
   }
 
+  const landRate = counts.total > 0 ? Math.round((counts.landed / counts.total) * 100) : null;
+
   return (
-    <View style={[s.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}> 
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+    <View style={[s.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={s.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => void loadHub(true)} tintColor={C.volt} />
+        }
+      >
         <View style={s.header}>
           <Text style={s.title}>Flow</Text>
-          <Text style={s.subtitle}>Your session loop</Text>
+          <Text style={s.sub}>
+            {hasActiveSession
+              ? "Log the truth fast. Film when you want evidence."
+              : "Session is open practice. Battle locks attention onto one trick."}
+          </Text>
         </View>
 
-        {analysisPending ? (
-          <Card accent={C.amber}>
-            <Eyebrow color={C.amber}>ANALYSIS IN PROGRESS</Eyebrow>
-            <Text style={s.cardHeading}>Finish the saved analysis first.</Text>
-            <Text style={s.body}>Resuming the existing job prevents duplicate uploads and duplicate quota usage.</Text>
-            <View style={s.actions}>
-              <Btn label="Resume Analysis" onPress={() => router.push("/analyzing" as never)} />
-            </View>
-          </Card>
-        ) : null}
-
-        {!hasActiveSession ? (
+        {!focusReady ? (
           <Card>
-            <Text style={s.welcome}>Sessions are how you film, upload, and build progression.</Text>
-            <Text style={s.body}>Start a session, add attempts and clips as you skate, then end it for a recap.</Text>
+            <SkeletonLines />
           </Card>
-        ) : null}
+        ) : (
+          <CurrentFocusHeader focus={focus} onPress={() => void openSession(battleTrick ? "battle" : "session")} />
+        )}
 
-        <Card accent={isBattle ? C.red : C.volt}>
-          <Eyebrow color={C.dim}>SESSION</Eyebrow>
-          {hydrateState === "loading" ? (
-            <View style={s.loading}><ActivityIndicator color={C.volt} /><Text style={s.body}>Loading session…</Text></View>
-          ) : hasActiveSession ? (
-            <>
-              <Text style={s.cardHeading}>{isBattle ? "Battle in progress" : "Session in progress"}</Text>
-              <Text style={s.body}>{activeSession?.spot_label ?? "No spot set"} · {counts.total} attempts</Text>
-              <View style={s.actions}><Btn label="Continue Session" onPress={() => router.push("/trick?returnTo=/flow" as never)} /></View>
-            </>
-          ) : (
-            <>
-              <Text style={s.body}>No active session yet. Start one and get skating.</Text>
-              <View style={s.actions}><Btn label="Start Session" onPress={() => void openSession("session")} disabled={analysisPending} /></View>
-            </>
-          )}
-        </Card>
+        {hydrateState === "loading" ? (
+          <View style={s.loading}>
+            <ActivityIndicator color={C.volt} />
+            <Text style={s.sub}>Loading session…</Text>
+          </View>
+        ) : !hasActiveSession ? (
+          <View style={s.modeGrid}>
+            <Pressable
+              onPress={() => void openSession("session")}
+              style={({ pressed }) => [s.modeCard, pressed && s.pressed]}
+            >
+              <Eyebrow color={C.volt}>SESSION</Eyebrow>
+              <Text style={s.modeTitle}>Skate freely.</Text>
+              <Text style={s.modeCopy}>
+                Change tricks whenever you want. Log attempts, film clips, finish with a recap.
+              </Text>
+              <Text style={[s.modeAction, { color: C.volt }]}>START SESSION →</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void openSession("battle")}
+              style={({ pressed }) => [s.modeCard, s.battleCard, pressed && s.pressed]}
+            >
+              <Eyebrow color={C.red}>BATTLE</Eyebrow>
+              <Text style={s.modeTitle}>
+                {battleTrick ? `Stay on ${battleTrick}.` : "One trick. Stay on it."}
+              </Text>
+              <Text style={s.modeCopy}>
+                Pick the trick you are fighting today and keep the whole session centered on it.
+              </Text>
+              <Text style={[s.modeAction, { color: C.red }]}>START BATTLE →</Text>
+            </Pressable>
 
-        {!hasActiveSession ? (
-          <Card accent={C.red}>
-            <Eyebrow color={C.dim}>BATTLE</Eyebrow>
-            <Text style={s.cardHeading}>One trick. Stay on it.</Text>
-            <Text style={s.body}>Battle mode keeps the whole session centered on one trick without creating a separate session system.</Text>
-            <View style={s.actions}><Btn label="Start Battle" variant="red" onPress={() => void openSession("battle")} disabled={busy || analysisPending} /></View>
-          </Card>
-        ) : null}
-
-        {hasActiveSession ? (
+            {lastRecap ? (
+              <Card
+                accent={C.muted}
+                onPress={() =>
+                  router.push(`/recap?sessionId=${encodeURIComponent(lastRecap.session_id)}` as never)
+                }
+              >
+                <Eyebrow>LAST RECAP</Eyebrow>
+                <Text style={s.modeTitle}>
+                  {lastRecap.focus_trick
+                    ? formatTrickDisplay(lastRecap.focus_trick)
+                    : lastRecap.spot ?? "Recent session"}
+                </Text>
+                <Text style={s.modeCopy}>
+                  {lastRecap.ended_at
+                    ? new Date(lastRecap.ended_at).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "Recent"}
+                  {lastRecap.best_pte_score != null ? ` · PTE ${lastRecap.best_pte_score}` : ""}
+                  {lastRecap.clips_count ? ` · ${lastRecap.clips_count} clips` : ""}
+                </Text>
+              </Card>
+            ) : null}
+          </View>
+        ) : (
           <>
-            <Card>
-              <Eyebrow color={C.dim}>CURRENT FOCUS</Eyebrow>
-              <Text style={s.cardHeading}>{selectedTrick?.canonicalName ?? "Choose a trick"}</Text>
-              <Text style={s.body}>{counts.landed} landed · {counts.missed} missed · {counts.total} attempts</Text>
+            <Card accent={isBattle ? C.red : C.volt}>
+              <View style={s.activeTop}>
+                <Eyebrow color={isBattle ? C.red : C.volt}>
+                  {isBattle ? "ACTIVE BATTLE" : "ACTIVE SESSION"}
+                </Eyebrow>
+                {landRate != null && landRate >= 60 ? (
+                  <MomentumChip state={landRate >= 80 ? "dialed" : "heating_up"} size="sm" />
+                ) : null}
+              </View>
+              <Text style={s.trick}>{selectedTrick?.canonicalName ?? "Choose a trick"}</Text>
+              <Text style={s.stats}>
+                {counts.landed} landed · {counts.missed} missed · {counts.total} attempts
+                {landRate != null ? ` · ${landRate}%` : ""}
+              </Text>
             </Card>
 
             {selectedTrick ? (
               <View style={s.attemptRow}>
-                <Pressable disabled={busy || analysisPending} onPress={() => void logAttempt(selectedTrick, "landed")} style={({ pressed }) => [s.attemptButton, s.landButton, (pressed || busy || analysisPending) && s.pressed]}>
+                <Pressable
+                  disabled={busy}
+                  onPress={() => void logAttempt(selectedTrick, "landed")}
+                  style={({ pressed }) => [s.attemptButton, s.landButton, (pressed || busy) && s.pressed]}
+                >
                   <Text style={s.landText}>LAND</Text>
                 </Pressable>
-                <Pressable disabled={busy || analysisPending} onPress={() => void logAttempt(selectedTrick, "missed")} style={({ pressed }) => [s.attemptButton, s.missButton, (pressed || busy || analysisPending) && s.pressed]}>
+                <Pressable
+                  disabled={busy}
+                  onPress={() => void logAttempt(selectedTrick, "missed")}
+                  style={({ pressed }) => [s.attemptButton, s.missButton, (pressed || busy) && s.pressed]}
+                >
                   <Text style={s.missText}>MISS</Text>
                 </Pressable>
               </View>
             ) : null}
 
-            <Card>
-              <Eyebrow color={C.dim}>SESSION ACTIONS</Eyebrow>
-              <View style={s.actions}>
-                <Btn label={selectedTrick ? "Film Clip" : "Choose Trick"} onPress={() => selectedTrick ? router.push("/capture" as never) : router.push("/trick?returnTo=/flow" as never)} disabled={busy || analysisPending} />
-                {!isBattle ? <Btn label="Change Trick" variant="ghost" onPress={() => router.push("/trick?returnTo=/flow" as never)} disabled={busy || analysisPending} /> : null}
-                <Btn label={isEnding ? "Ending…" : isBattle ? "End Battle" : "End Session"} variant="ghost" onPress={() => void finishSession()} disabled={busy || analysisPending} />
-              </View>
-            </Card>
+            <View style={{ gap: 10 }}>
+              <Btn
+                label={selectedTrick ? "Film this attempt" : "Choose trick"}
+                onPress={() =>
+                  selectedTrick
+                    ? router.push("/capture" as never)
+                    : router.push("/trick?returnTo=/flow" as never)
+                }
+                disabled={busy}
+              />
+              {!isBattle ? (
+                <Btn
+                  label="Change trick"
+                  variant="ghost"
+                  onPress={() => router.push("/trick?returnTo=/flow" as never)}
+                  disabled={busy}
+                />
+              ) : null}
+              <Btn
+                label={isEnding ? "Ending…" : isBattle ? "End battle" : "End session"}
+                variant="red"
+                onPress={() => void finishSession()}
+                disabled={busy}
+              />
+            </View>
           </>
-        ) : null}
+        )}
 
-        <Card>
-          <Eyebrow color={C.dim}>LAST RECAP</Eyebrow>
-          <Text style={s.body}>Finish a session to review your latest recap and progression.</Text>
-          <View style={s.actions}><Btn label="View Session History" variant="ghost" onPress={() => router.push("/history" as never)} /></View>
-        </Card>
-
-        {hydrateError ? (
-          <View style={s.errorBlock}>
-            <Text style={s.error}>{hydrateError}</Text>
-            <Btn label="Retry session recovery" variant="ghost" onPress={() => void refreshActiveSession()} disabled={busy} />
-          </View>
-        ) : null}
         {createError ? <Text style={s.error}>{createError}</Text> : null}
-        {submitError ? (
-          <View style={s.errorBlock}>
-            <Text style={s.error}>{submitError}</Text>
-            <Btn label="Dismiss attempt error" variant="ghost" onPress={dismissSubmitError} />
-          </View>
-        ) : null}
-        {endError ? (
-          <View style={s.errorBlock}>
-            <Text style={s.error}>{endError}</Text>
-            <Text style={s.recoveryCopy}>The completion journal remains saved. Retry recovery instead of creating a duplicate recap.</Text>
-            <Btn label="Retry session recovery" variant="ghost" onPress={() => void refreshActiveSession()} disabled={busy} />
-            <Btn label="Dismiss" variant="ghost" onPress={dismissEndError} />
-          </View>
-        ) : null}
+        {submitError ? <Text style={s.error}>{submitError}</Text> : null}
+        {endError ? <Text style={s.error}>{endError}</Text> : null}
       </ScrollView>
       <AppNav />
     </View>
@@ -222,23 +289,39 @@ export default function FlowScreen() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
-  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 28, gap: 18 },
-  header: { paddingBottom: 4 },
-  title: { fontFamily: F.heading, fontSize: 38, lineHeight: 42, color: C.offwhite },
-  subtitle: { fontFamily: F.body, fontSize: 14, color: C.dim, marginTop: 2 },
-  welcome: { fontFamily: F.body, fontSize: 16, lineHeight: 23, color: C.offwhite },
-  cardHeading: { fontFamily: F.heading, fontSize: 22, lineHeight: 27, color: C.offwhite, marginTop: 8 },
-  body: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim, marginTop: 6 },
-  loading: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 },
-  actions: { gap: 10, marginTop: 14 },
+  content: { paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.xl, gap: SPACE.lg },
+  header: { gap: SPACE.sm },
+  title: { fontFamily: F.heading, fontSize: 34, lineHeight: 38, color: C.offwhite },
+  sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
+  loading: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 20 },
+  modeGrid: { gap: SPACE.md },
+  modeCard: {
+    backgroundColor: C.charcoal2,
+    borderRadius: RADIUS.lg,
+    padding: SPACE.xl,
+    gap: SPACE.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: C.volt,
+  },
+  battleCard: { borderLeftColor: C.red },
+  modeTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite },
+  modeCopy: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
+  modeAction: { fontFamily: F.bold, fontSize: 13, marginTop: 4 },
+  activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  trick: { fontFamily: F.heading, fontSize: 26, color: C.offwhite, marginTop: 4 },
+  stats: { fontFamily: F.mono, fontSize: 11, color: C.dim, marginTop: 4 },
   attemptRow: { flexDirection: "row", gap: 12 },
-  attemptButton: { flex: 1, minHeight: 112, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  attemptButton: {
+    flex: 1,
+    minHeight: 112,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   landButton: { backgroundColor: C.volt },
   missButton: { backgroundColor: C.charcoal2, borderWidth: 2, borderColor: C.red },
   landText: { fontFamily: F.heading, fontSize: 24, color: C.charcoal },
   missText: { fontFamily: F.heading, fontSize: 24, color: C.red },
-  errorBlock: { gap: 8 },
-  error: { fontFamily: F.body, color: C.red, fontSize: 13, lineHeight: 19, textAlign: "center" },
-  recoveryCopy: { fontFamily: F.body, color: C.dim, fontSize: 12, lineHeight: 18, textAlign: "center" },
+  error: { fontFamily: F.body, color: C.red, fontSize: 13, textAlign: "center" },
   pressed: { opacity: 0.72 },
 });

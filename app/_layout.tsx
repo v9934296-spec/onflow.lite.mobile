@@ -1,12 +1,13 @@
 import React, { useEffect } from "react";
 import { Stack } from "expo-router";
 import {
-  useFonts,
-  Archivo_400Regular,
-  Archivo_700Bold,
-  Archivo_800ExtraBold,
-} from "@expo-google-fonts/archivo";
-import { SpaceMono_400Regular } from "@expo-google-fonts/space-mono";
+  Rubik_400Regular,
+  Rubik_500Medium,
+  Rubik_700Bold,
+  Rubik_800ExtraBold,
+} from "@expo-google-fonts/rubik";
+import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from "@expo-google-fonts/jetbrains-mono";
+import { useFonts } from "expo-font";
 import { View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -91,10 +92,12 @@ function RootLayout() {
 
 export default function Layout() {
   const [loaded] = useFonts({
-    Archivo_400Regular,
-    Archivo_700Bold,
-    Archivo_800ExtraBold,
-    SpaceMono_400Regular,
+    Rubik_400Regular,
+    Rubik_500Medium,
+    Rubik_700Bold,
+    Rubik_800ExtraBold,
+    JetBrainsMono_500Medium,
+    JetBrainsMono_700Bold,
   });
 
   if (!loaded) return <View style={{ flex: 1, backgroundColor: C.charcoal }} />;

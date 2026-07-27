@@ -1,15 +1,29 @@
-﻿import React, { useCallback, useState } from "react";
-import { Alert, Linking, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AppNav } from "../src/components/AppNav";
 import { track } from "../src/analytics";
 import { deleteMyAccount, exportMyData } from "../src/api/accountApi";
+import {
+  fetchProgressionOverview,
+  type ProgressionOverview,
+} from "../src/api/progressionApi";
 import { useAccount } from "../src/auth/accountContext";
 import { useAuth } from "../src/auth/authContext";
 import { isProTier, PAYWALL_ROUTE } from "../src/billing/quota";
 import { DELETE_ACCOUNT_INFO_URL, PRIVACY_URL, TERMS_URL } from "../src/legal/urls";
-import { C, F } from "../src/theme";
-import { Btn, Card, Eyebrow } from "../src/ui";
+import { C, F, RADIUS, SPACE } from "../src/theme";
+import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 
 function Row({
   label,
@@ -38,25 +52,21 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAccount();
   const { signOut } = useAuth();
+  const [overview, setOverview] = useState<ProgressionOverview | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
   const [busy, setBusy] = useState<"export" | "delete" | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
 
-  const handleSignOut = async () => {
-    if (signingOut || busy) return;
-    setSigningOut(true);
-    try {
-      await signOut();
-    } catch (error) {
-      Alert.alert(
-        "Couldn't sign out securely",
-        error instanceof Error
-          ? error.message
-          : "The encrypted credential could not be removed. Restart the app and try again.",
-      );
-    } finally {
-      setSigningOut(false);
-    }
-  };
+  useEffect(() => {
+    let cancelled = false;
+    void fetchProgressionOverview().then((result) => {
+      if (cancelled) return;
+      if (result.ok) setOverview(result.data);
+      setLoadingStats(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const onExport = useCallback(async () => {
     if (busy) return;
@@ -124,67 +134,112 @@ export default function SettingsScreen() {
     );
   }, [busy, runDelete]);
 
+  const displayName = user?.email?.split("@")[0] ?? user?.user_id ?? "Skater";
+
   return (
-    <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
-      <View style={{ gap: 6 }}>
-        <Eyebrow color={C.red}>ONFLOW</Eyebrow>
-        <Text style={s.title}>Settings</Text>
-      </View>
+    <View style={[s.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}>
+      <ScrollView contentContainerStyle={s.content}>
+        <View style={{ gap: 6 }}>
+          <Eyebrow color={C.red}>ONFLOW</Eyebrow>
+          <Text style={s.title}>Profile</Text>
+        </View>
 
-      {user ? (
         <Card accent={C.volt}>
-          <Eyebrow color={C.volt}>ACCOUNT</Eyebrow>
-          <Text style={s.value}>{user.email || user.user_id}</Text>
-          <Text style={s.meta}>{String(user.tier).toUpperCase()} PLAN</Text>
+          <View style={s.avatarRow}>
+            <View style={s.avatar}>
+              <Text style={s.avatarLetter}>{displayName.slice(0, 1).toUpperCase()}</Text>
+            </View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={s.value}>{user?.email || user?.user_id || "Signed out"}</Text>
+              <Text style={s.meta}>{String(user?.tier ?? "guest").toUpperCase()} PLAN</Text>
+            </View>
+          </View>
         </Card>
-      ) : null}
 
-      {!isProTier(user?.tier) ? (
-        <Btn label="Upgrade to Pro" onPress={() => router.push(PAYWALL_ROUTE)} />
-      ) : null}
+        {loadingStats ? (
+          <Card>
+            <SkeletonLines widths={["40%", "70%"]} />
+          </Card>
+        ) : overview ? (
+          <Card>
+            <Eyebrow>YOUR STATS</Eyebrow>
+            <View style={s.stats}>
+              <Stat label="Sessions" value={String(overview.total_sessions)} />
+              <Stat label="Make rate" value={`${Math.round(overview.global_make_rate)}%`} />
+              <Stat label="Streak" value={String(overview.current_streak)} />
+            </View>
+          </Card>
+        ) : null}
 
-      <View style={s.group}>
-        <Row label="Notifications" onPress={() => router.push("/notifications" as never)} />
-        <Row label="Terms of Service" onPress={() => void Linking.openURL(TERMS_URL)} />
-        <Row label="Privacy Policy" onPress={() => void Linking.openURL(PRIVACY_URL)} />
-        <Row
-          label={busy === "export" ? "Exporting…" : "Export my data"}
-          onPress={() => void onExport()}
-        />
-        <Row
-          label="Delete account information"
-          onPress={() => void Linking.openURL(DELETE_ACCOUNT_INFO_URL)}
-          danger
-        />
-        <Row
-          label={busy === "delete" ? "Deleting…" : "Delete my account"}
-          onPress={onDeletePress}
-          danger
-        />
-      </View>
+        {!isProTier(user?.tier) ? (
+          <Btn label="Upgrade to Pro" onPress={() => router.push(PAYWALL_ROUTE)} />
+        ) : null}
 
-      <View style={{ marginTop: "auto", gap: 10 }}>
-        <Btn
-          label={signingOut ? "Signing out…" : "Sign out"}
-          variant="red"
-          onPress={() => void handleSignOut()}
-          disabled={signingOut || Boolean(busy)}
-        />
-        <Btn label="Back" variant="ghost" onPress={() => router.back()} disabled={signingOut} />
-      </View>
+        <View style={s.group}>
+          <Row label="Feed" onPress={() => router.push("/feed" as never)} />
+          <Row label="Session history" onPress={() => router.push("/history" as never)} />
+          <Row label="Notifications" onPress={() => router.push("/notifications" as never)} />
+          <Row label="Terms of Service" onPress={() => void Linking.openURL(TERMS_URL)} />
+          <Row label="Privacy Policy" onPress={() => void Linking.openURL(PRIVACY_URL)} />
+          <Row
+            label={busy === "export" ? "Exporting…" : "Export my data"}
+            onPress={() => void onExport()}
+          />
+          <Row
+            label="Delete account information"
+            onPress={() => void Linking.openURL(DELETE_ACCOUNT_INFO_URL)}
+            danger
+          />
+          <Row
+            label={busy === "delete" ? "Deleting…" : "Delete my account"}
+            onPress={onDeletePress}
+            danger
+          />
+        </View>
+
+        <View style={{ gap: 10, marginTop: SPACE.md }}>
+          <Btn label="Sign out" variant="red" onPress={() => void signOut()} />
+          <Btn label="Back to Home" variant="ghost" onPress={() => router.replace("/" as never)} />
+        </View>
+      </ScrollView>
+      <AppNav />
+    </View>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={s.stat}>
+      <Text style={s.statValue}>{value}</Text>
+      <Text style={s.statLabel}>{label}</Text>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 16 },
+  screen: { flex: 1, backgroundColor: C.charcoal },
+  content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, gap: SPACE.lg },
   title: { fontFamily: F.heading, fontSize: 32, color: C.offwhite },
-  value: { fontFamily: F.bold, fontSize: 15, color: C.offwhite, marginTop: 4 },
-  meta: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8, color: C.dim, marginTop: 4 },
-  group: { backgroundColor: C.charcoal2, borderRadius: 14, overflow: "hidden" },
+  avatarRow: { flexDirection: "row", alignItems: "center", gap: SPACE.md },
+  avatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.charcoal3,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarLetter: { fontFamily: F.heading, fontSize: 22, color: C.volt },
+  value: { fontFamily: F.bold, fontSize: 15, color: C.offwhite },
+  meta: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8, color: C.dim },
+  stats: { flexDirection: "row", gap: SPACE.lg },
+  stat: { gap: 2 },
+  statValue: { fontFamily: F.monoBold, fontSize: 20, color: C.offwhite },
+  statLabel: { fontFamily: F.mono, fontSize: 10, color: C.dim, textTransform: "uppercase" },
+  group: { backgroundColor: C.charcoal2, borderRadius: RADIUS.lg, overflow: "hidden" },
   row: {
     minHeight: 58,
-    paddingHorizontal: 16,
+    paddingHorizontal: SPACE.lg,
     flexDirection: "row",
     alignItems: "center",
     borderBottomWidth: StyleSheet.hairlineWidth,

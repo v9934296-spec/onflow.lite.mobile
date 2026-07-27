@@ -270,7 +270,7 @@ const s = StyleSheet.create({
   outcomeBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: C.aluminum,
+    borderColor: C.charcoal4,
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: "center",

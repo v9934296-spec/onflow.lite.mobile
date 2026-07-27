@@ -230,7 +230,7 @@ const s = StyleSheet.create({
     gap: 12,
     backgroundColor: C.charcoal2,
     borderWidth: 1,
-    borderColor: C.aluminum,
+    borderColor: C.charcoal4,
     borderRadius: 10,
     padding: 14,
   },

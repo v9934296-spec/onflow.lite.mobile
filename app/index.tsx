@@ -1,190 +1,268 @@
-import React, { useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppNav } from "../src/components/AppNav";
+import { CurrentFocusHeader } from "../src/components/CurrentFocusHeader";
+import { TrickCard } from "../src/components/TrickCard";
 import { useAccount } from "../src/auth/accountContext";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
-import { useSession } from "../src/session";
-import { getBestTrickStreak } from "../src/progress";
-import { C, F } from "../src/theme";
-import { Btn, Card, Eyebrow } from "../src/ui";
+import {
+  fetchProgressionOverview,
+  fetchTrickStats,
+  fetchWhatsNext,
+  type ProgressionOverview,
+  type TrickStatSummary,
+  type WhatsNextPayload,
+} from "../src/api/progressionApi";
+import {
+  adaptTrickStats,
+  buildCurrentFocus,
+  formatTrickDisplay,
+  pickActiveBattle,
+} from "../src/yourFlowAdapter";
+import { C, F, SPACE } from "../src/theme";
+import { Card, Eyebrow, SkeletonLines } from "../src/ui";
 
-function formatDate(iso?: string | null): string {
-  if (!iso) return "None yet";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime())
-    ? "None yet"
-    : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <View style={s.section}>
-      <Text style={s.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
-}
+type LoadState = "loading" | "ready" | "error";
 
 export default function Home() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAccount();
-  const { activeSession, hasActiveSession } = useSkateSession();
-  const { attempts, log, selectedTrick, pendingClipJobId } = useSession();
+  const { hasActiveSession, activeSession } = useSkateSession();
 
-  const streak = useMemo(() => getBestTrickStreak(attempts), [attempts]);
-  const latestAnalysis = useMemo(
-    () => [...log].reverse().find((entry) => entry.analysis.source === "user"),
-    [log],
-  );
-  const bestPte = useMemo(() => {
-    const ratings = log
-      .map((entry) => entry.analysis.rating)
-      .filter((value): value is number => typeof value === "number");
-    return ratings.length ? Math.max(...ratings) : null;
-  }, [log]);
-  const isBattle = activeSession?.notes?.startsWith("[battle]") ?? false;
-  const handle = user?.email?.split("@")[0]?.trim();
-  const objective =
-    latestAnalysis?.analysis.workOn?.trim() ||
-    "Complete a filmed attempt to unlock your next coaching objective.";
-  const focusName = selectedTrick?.canonicalName ?? activeSession?.focus_trick ?? null;
-  const analysisPending = Boolean(pendingClipJobId);
+  const [state, setState] = useState<LoadState>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [overview, setOverview] = useState<ProgressionOverview | null>(null);
+  const [whatsNext, setWhatsNext] = useState<WhatsNextPayload | null>(null);
+  const [rawTricks, setRawTricks] = useState<TrickStatSummary[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setState("loading");
+    setError(null);
+
+    const [overviewResult, whatsNextResult, tricksResult] = await Promise.all([
+      fetchProgressionOverview(),
+      fetchWhatsNext(),
+      fetchTrickStats(),
+    ]);
+
+    if (!overviewResult.ok && !tricksResult.ok) {
+      setError(overviewResult.ok === false ? overviewResult.error.message : "Could not load home.");
+      setState("error");
+      setRefreshing(false);
+      return;
+    }
+
+    setOverview(overviewResult.ok ? overviewResult.data : null);
+    setWhatsNext(whatsNextResult.ok ? whatsNextResult.data : null);
+    setRawTricks(tricksResult.ok ? tricksResult.data : []);
+    setState("ready");
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const tricks = adaptTrickStats(rawTricks);
+  const focus = buildCurrentFocus(whatsNext, rawTricks);
+  const battle = pickActiveBattle(tricks);
+  const isBattleLive = activeSession?.notes?.startsWith("[battle]") ?? false;
 
   return (
-    <View style={[s.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}> 
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        <View style={s.header}>
-          <Text style={s.h1}>OnFlow</Text>
-          <Text style={s.subtitle}>Command Center</Text>
-          {handle ? <Text style={s.signedIn}>Signed in as {handle}</Text> : null}
+    <View style={[s.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}>
+      <ScrollView
+        style={s.scroll}
+        contentContainerStyle={s.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void load(true)}
+            tintColor={C.volt}
+          />
+        }
+      >
+        <View style={s.topline}>
+          <Eyebrow color={C.volt}>ONFLOW</Eyebrow>
+          <Pressable onPress={() => router.push("/settings" as never)} hitSlop={12}>
+            <Text style={s.link}>PROFILE</Text>
+          </Pressable>
         </View>
 
-        {analysisPending ? (
-          <Card accent={C.amber}>
-            <Eyebrow color={C.amber}>ANALYSIS RECOVERED</Eyebrow>
-            <Text style={s.cardHeading}>Your unfinished analysis is still saved.</Text>
-            <Text style={s.body}>
-              OnFlow restored the job after the app closed. Resume checking the server instead of uploading the clip again.
-            </Text>
-            <View style={s.cardAction}>
-              <Btn label="Resume analysis" onPress={() => router.push("/analyzing" as never)} />
-            </View>
+        {user?.email ? <Text style={s.account}>{user.email}</Text> : null}
+
+        {state === "loading" ? (
+          <Card>
+            <SkeletonLines testID="home-loading" />
           </Card>
         ) : null}
 
-        {!attempts.length && !log.length && !hasActiveSession && !analysisPending ? (
-          <Card accent={C.volt}>
-            <Eyebrow color={C.dim}>WELCOME</Eyebrow>
-            <Text style={s.cardHeading}>Welcome to OnFlow</Text>
-            <Text style={s.body}>
-              Film skate clips, get honest coaching, and track progression over time. Start with your first session.
-            </Text>
-            <View style={s.cardAction}>
-              <Btn label="Start Session" onPress={() => router.push("/flow" as never)} />
-            </View>
-          </Card>
-        ) : null}
-
-        <Section title="YOUR FOCUS">
-          <Card accent={isBattle ? C.red : C.volt}>
-            <Eyebrow color={C.dim}>CURRENT BATTLE</Eyebrow>
-            {focusName ? (
-              <>
-                <Text style={s.cardHeading}>{focusName}</Text>
-                <Text style={s.body}>
-                  {isBattle ? "Battle active" : "Current focus"} · {attempts.length} logged entries
-                </Text>
-                {streak ? <Text style={s.momentum}>{streak.streak} day momentum</Text> : null}
-              </>
-            ) : (
-              <Text style={s.body}>Pick a trick and start skating to see your focus here.</Text>
-            )}
-          </Card>
-
+        {state === "error" ? (
           <Card accent={C.red}>
-            <Eyebrow color={C.dim}>CURRENT OBJECTIVE</Eyebrow>
-            <Text style={s.objective}>{objective}</Text>
+            <Text style={s.error}>{error ?? "Something went wrong."}</Text>
+            <Pressable onPress={() => void load()}>
+              <Text style={s.retry}>Tap to retry</Text>
+            </Pressable>
           </Card>
-        </Section>
+        ) : null}
 
-        <Section title="AT A GLANCE">
-          <Card>
-            <Eyebrow color={C.dim}>QUICK PROGRESS SUMMARY</Eyebrow>
-            <View style={s.statsList}>
-              <View style={s.statRow}>
-                <Text style={s.statLabel}>Sessions logged</Text>
-                <Text style={s.statValue}>{log.length || "None yet"}</Text>
-              </View>
-              <View style={s.statRow}>
-                <Text style={s.statLabel}>Active battles</Text>
-                <Text style={s.statValue}>{hasActiveSession && isBattle ? "1" : "0"}</Text>
-              </View>
-              <View style={s.statRow}>
-                <Text style={s.statLabel}>Last activity</Text>
-                <Text style={s.statValue}>{formatDate(log.at(-1)?.loggedAt)}</Text>
-              </View>
-              <View style={s.statRow}>
-                <Text style={s.statLabel}>Recent best PTE</Text>
-                <Text style={s.statValue}>{bestPte != null ? bestPte.toFixed(1) : "None yet"}</Text>
-              </View>
-            </View>
-          </Card>
-        </Section>
+        {state === "ready" ? (
+          <>
+            {hasActiveSession ? (
+              <Card
+                accent={isBattleLive ? C.red : C.volt}
+                onPress={() => router.replace("/flow" as never)}
+              >
+                <Eyebrow color={isBattleLive ? C.red : C.volt}>
+                  {isBattleLive ? "BATTLE LIVE" : "SESSION LIVE"}
+                </Eyebrow>
+                <Text style={s.cardTitle}>Continue skating</Text>
+                <Text style={s.cardSub}>Pick up where you left off.</Text>
+              </Card>
+            ) : null}
 
-        <Section title="UPDATES">
-          <Card>
-            <View style={s.rowBetween}>
-              <Eyebrow color={C.dim}>NOTIFICATIONS</Eyebrow>
-              <Pressable onPress={() => router.push("/notifications" as never)} hitSlop={12}>
-                <Text style={s.link}>See all</Text>
-              </Pressable>
-            </View>
-            <Text style={s.body}>No notifications yet. Session recaps and progression updates will appear here.</Text>
-          </Card>
-        </Section>
+            {battle ? (
+              <Card accent={C.red} onPress={() => router.replace("/flow" as never)}>
+                <Eyebrow color={C.red}>BATTLE</Eyebrow>
+                <Text style={s.cardTitle}>{battle.display_name}</Text>
+                <Text style={s.cardSub}>
+                  {battle.make_rate_pct}% make rate · keep pressure on until it flips.
+                </Text>
+              </Card>
+            ) : null}
 
-        <Section title="GO DEEPER">
-          <Card>
-            <Eyebrow color={C.dim}>QUICK LINKS</Eyebrow>
+            <CurrentFocusHeader
+              focus={focus}
+              onPress={() => router.replace("/flow" as never)}
+            />
+
+            {whatsNext?.has_recommendation ? (
+              <Card accent={C.volt}>
+                <Eyebrow color={C.volt}>OBJECTIVE</Eyebrow>
+                <Text style={s.cardTitle}>
+                  {whatsNext.focus_trick
+                    ? formatTrickDisplay(whatsNext.focus_trick)
+                    : "What's next"}
+                </Text>
+                <Text style={s.cardSub}>{whatsNext.message}</Text>
+                {whatsNext.focus_cue ? (
+                  <Text style={s.cue}>Cue: {whatsNext.focus_cue}</Text>
+                ) : null}
+              </Card>
+            ) : null}
+
+            {overview ? (
+              <Card>
+                <Eyebrow>PROGRESS SUMMARY</Eyebrow>
+                <View style={s.metrics}>
+                  <Metric label="Make rate" value={`${Math.round(overview.global_make_rate)}%`} />
+                  <Metric label="Sessions" value={String(overview.total_sessions)} />
+                  <Metric label="Streak" value={String(overview.current_streak)} />
+                  <Metric label="This week" value={String(overview.sessions_this_week)} />
+                </View>
+              </Card>
+            ) : null}
+
+            {tricks.length > 0 ? (
+              <View style={s.section}>
+                <Text style={s.sectionTitle}>YOUR FLOW</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.trickRow}>
+                  {tricks.slice(0, 8).map((trick) => (
+                    <TrickCard
+                      key={trick.trick_id}
+                      trick={trick}
+                      onPress={() => router.replace("/pte" as never)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+
             <View style={s.quickLinks}>
-              <Btn label="Open Feed" variant="ghost" onPress={() => router.push("/feed" as never)} />
-              <Btn label="Open PTE.Flow" variant="ghost" onPress={() => router.push("/pte" as never)} />
-              <Btn label="Session History" variant="ghost" onPress={() => router.push("/history" as never)} />
-              <Btn
-                label={hasActiveSession ? "Continue Session" : "Start Session"}
-                onPress={() => router.push("/flow" as never)}
-              />
+              <QuickLink label="Feed" onPress={() => router.push("/feed" as never)} />
+              <QuickLink label="History" onPress={() => router.push("/history" as never)} />
+              <QuickLink label="Notifications" onPress={() => router.push("/notifications" as never)} />
+              <QuickLink label="Start session" onPress={() => router.replace("/flow" as never)} accent={C.volt} />
             </View>
-          </Card>
-        </Section>
+          </>
+        ) : null}
       </ScrollView>
       <AppNav />
     </View>
   );
 }
 
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={s.metric}>
+      <Text style={s.metricValue}>{value}</Text>
+      <Text style={s.metricLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function QuickLink({
+  label,
+  onPress,
+  accent,
+}: {
+  label: string;
+  onPress: () => void;
+  accent?: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [s.quick, pressed && { opacity: 0.8 }, accent ? { borderColor: accent } : null]}
+    >
+      <Text style={[s.quickText, accent ? { color: accent } : null]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
-  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 28, gap: 26 },
-  header: { paddingBottom: 4 },
-  h1: { fontFamily: F.heading, fontSize: 38, lineHeight: 42, color: C.offwhite },
-  subtitle: { fontFamily: F.body, fontSize: 14, color: C.dim, marginTop: 2 },
-  signedIn: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 8 },
-  section: { gap: 12 },
-  sectionTitle: { fontFamily: F.bold, fontSize: 12, letterSpacing: 0.7, color: C.dim },
-  cardHeading: { fontFamily: F.heading, fontSize: 22, lineHeight: 27, color: C.offwhite, marginTop: 6 },
-  body: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim, marginTop: 6 },
-  objective: { fontFamily: F.body, fontSize: 16, lineHeight: 23, color: C.offwhite, marginTop: 8 },
-  momentum: { fontFamily: F.bold, fontSize: 12, color: C.volt, marginTop: 5 },
-  cardAction: { marginTop: 14 },
-  statsList: { gap: 12, marginTop: 12 },
-  statRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 16 },
-  statLabel: { flex: 1, fontFamily: F.body, fontSize: 13, color: C.dim },
-  statValue: { fontFamily: F.bold, fontSize: 13, color: C.offwhite, textAlign: "right" },
-  rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  link: { fontFamily: F.bold, fontSize: 12, color: C.volt },
-  quickLinks: { gap: 10, marginTop: 12 },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, gap: SPACE.lg },
+  topline: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  link: { fontFamily: F.bold, fontSize: 11, letterSpacing: 0.8, color: C.dim },
+  account: { fontFamily: F.mono, fontSize: 11, color: C.dim, marginTop: -8 },
+  error: { fontFamily: F.body, color: C.offwhite, fontSize: 14 },
+  retry: { fontFamily: F.bold, color: C.volt, marginTop: 8 },
+  cardTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite, lineHeight: 28 },
+  cardSub: { fontFamily: F.body, fontSize: 14, lineHeight: 20, color: C.dim },
+  cue: { fontFamily: F.mono, fontSize: 12, color: C.volt, marginTop: 4 },
+  metrics: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.md },
+  metric: { width: "45%", gap: 2 },
+  metricValue: { fontFamily: F.monoBold, fontSize: 22, color: C.offwhite },
+  metricLabel: { fontFamily: F.mono, fontSize: 11, color: C.dim, textTransform: "uppercase" },
+  section: { gap: SPACE.md },
+  sectionTitle: {
+    fontFamily: F.medium,
+    fontSize: 12,
+    letterSpacing: 0.8,
+    color: C.dim,
+    textTransform: "uppercase",
+  },
+  trickRow: { gap: SPACE.md, paddingRight: SPACE.lg },
+  quickLinks: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.sm },
+  quick: {
+    borderWidth: 1,
+    borderColor: C.charcoal4,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  quickText: { fontFamily: F.bold, fontSize: 12, color: C.offwhite, letterSpacing: 0.4 },
 });
