@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mapClipJobToAnalysis, API_ENGINE_VERSION } from "../../analysis/mapClipJobToAnalysis";
+
+import { API_ENGINE_VERSION, mapClipJobToAnalysis } from "../../analysis/mapClipJobToAnalysis";
 import type { ClipJob } from "../../api/types/clipJob";
 
 const COMPLETED: Extract<ClipJob, { status: "completed" }> = {
@@ -10,6 +11,7 @@ const COMPLETED: Extract<ClipJob, { status: "completed" }> = {
     review_summary: "Clean catch.",
     review_readiness: "usable",
     observations: ["Full rotation", "Solid landing"],
+    model_confidence_percent: 82,
     normalized_review: {
       summary: "Strong kickflip.",
       score: 7.5,
@@ -31,10 +33,20 @@ describe("mapClipJobToAnalysis", () => {
     expect(analysis.trickOnFilm).toBe("Kickflip");
     expect(analysis.mismatch).toBe(false);
     expect(analysis.rating).toBe(7.5);
+    expect(analysis.confidence).toBe(82);
+    expect(analysis.evidenceClass).toBe("DETECTED");
     expect(analysis.engineVersion).toBe(API_ENGINE_VERSION);
     expect(analysis.source).toBe("user");
     expect(analysis.observations).toHaveLength(2);
     expect(analysis.breakdown).toHaveLength(2);
+  });
+
+  it("does not derive confidence from the technique score", () => {
+    const job = {
+      ...COMPLETED,
+      result: { ...COMPLETED.result, model_confidence_percent: null },
+    };
+    expect(mapClipJobToAnalysis(job, "Kickflip").confidence).toBeNull();
   });
 
   it("flags trick mismatch when clip label differs", () => {

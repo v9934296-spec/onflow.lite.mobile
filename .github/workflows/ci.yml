@@ -22,6 +22,30 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run bundle:ios
+
+      - name: Typecheck
+        run: |
+          set -o pipefail
+          npm run typecheck 2>&1 | tee typecheck.log
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee tests.log
+
+      - name: iOS bundle check
+        run: |
+          set -o pipefail
+          npm run bundle:ios 2>&1 | tee bundle-ios.log
+
+      - name: Upload validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-logs
+          path: |
+            typecheck.log
+            tests.log
+            bundle-ios.log
+          if-no-files-found: ignore
+          retention-days: 7

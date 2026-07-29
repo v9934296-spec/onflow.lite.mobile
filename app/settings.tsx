@@ -1,5 +1,5 @@
-import React from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useState } from "react";
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccount } from "../src/auth/accountContext";
@@ -26,6 +26,24 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAccount();
   const { signOut } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+    } catch (error) {
+      Alert.alert(
+        "Couldn't sign out securely",
+        error instanceof Error
+          ? error.message
+          : "The encrypted credential could not be removed. Restart the app and try again.",
+      );
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}> 
@@ -49,8 +67,8 @@ export default function SettingsScreen() {
       </View>
 
       <View style={{ marginTop: "auto", gap: 10 }}>
-        <Btn label="Sign out" variant="red" onPress={() => void signOut()} />
-        <Btn label="Back" variant="ghost" onPress={() => router.back()} />
+        <Btn label={signingOut ? "Signing out…" : "Sign out"} variant="red" onPress={() => void handleSignOut()} disabled={signingOut} />
+        <Btn label="Back" variant="ghost" onPress={() => router.back()} disabled={signingOut} />
       </View>
     </View>
   );

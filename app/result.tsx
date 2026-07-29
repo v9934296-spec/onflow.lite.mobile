@@ -2,11 +2,12 @@ import React, { useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { C, F } from "../src/theme";
-import { Btn, Card, Eyebrow, Field, LiteBanner, Tag } from "../src/ui";
+
 import { getFlowRedirect } from "../src/flow";
 import { useSession } from "../src/session";
-import { ManualOutcome } from "../src/types";
+import { C, F } from "../src/theme";
+import type { ManualOutcome } from "../src/types";
+import { Btn, Card, Eyebrow, Field, LiteBanner, Tag } from "../src/ui";
 
 function OutcomeBtn({
   label,
@@ -114,17 +115,17 @@ export default function Result() {
             ? `  ·  ON FILM: ${currentAnalysis.trickOnFilm.toUpperCase()}`
             : ""}
         </Eyebrow>
-        <Text style={s.title}>
-          {currentAnalysis.trickOnFilm ?? currentAnalysis.trickCalled}
-        </Text>
+        <Text style={s.title}>{currentAnalysis.trickOnFilm ?? currentAnalysis.trickCalled}</Text>
         <Text style={s.engineStamp}>{currentAnalysis.engineVersion}</Text>
       </View>
 
       <Card accent={currentAnalysis.abstained ? C.red : isSelfReport ? C.amber : C.volt}>
         <View style={s.metaRow}>
           <Tag kind={currentAnalysis.evidenceClass} />
-          <Text style={[s.confidence, { color: evidenceColor }]}>
-            {currentAnalysis.confidence}% confidence
+          <Text style={[s.confidence, { color: currentAnalysis.confidence == null ? C.dim : evidenceColor }]}>
+            {currentAnalysis.confidence == null
+              ? "CONFIDENCE NOT PROVIDED"
+              : `${Math.round(currentAnalysis.confidence)}% confidence`}
           </Text>
         </View>
         <View style={s.ratingRow}>
@@ -167,9 +168,7 @@ export default function Result() {
 
       <Card accent={C.volt}>
         <Eyebrow color={C.volt}>LOG THIS ATTEMPT</Eyebrow>
-        <Text style={s.body}>
-          What happened? This is your record — not a guess from the engine.
-        </Text>
+        <Text style={s.body}>What happened? This is your record — not a guess from the engine.</Text>
 
         <View style={s.outcomeRow}>
           <OutcomeBtn
@@ -230,9 +229,7 @@ export default function Result() {
         <Text style={s.body}>{currentAnalysis.workOn}</Text>
       </Card>
 
-      {currentAnalysis.styleNote ? (
-        <Text style={s.styleNote}>Style: {currentAnalysis.styleNote}</Text>
-      ) : null}
+      {currentAnalysis.styleNote ? <Text style={s.styleNote}>Style: {currentAnalysis.styleNote}</Text> : null}
 
       <View style={{ gap: 10, marginTop: 8 }}>
         {currentAnalysis.abstained ? (

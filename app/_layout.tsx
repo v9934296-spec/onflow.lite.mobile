@@ -100,14 +100,14 @@ export default function Layout() {
   if (!loaded) return <View style={{ flex: 1, backgroundColor: C.charcoal }} />;
 
   return (
-    <SessionProvider>
-      <AccountProvider>
-        <AuthProvider>
+    <AccountProvider>
+      <AuthProvider>
+        <SessionProvider>
           <SkateSessionProvider>
             <RootLayout />
           </SkateSessionProvider>
-        </AuthProvider>
-      </AccountProvider>
-    </SessionProvider>
+        </SessionProvider>
+      </AuthProvider>
+    </AccountProvider>
   );
 }

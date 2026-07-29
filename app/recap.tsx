@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
 import { loadLastRecapSessionId } from "../src/activeSessionStore";
+import { useAccount } from "../src/auth/accountContext";
 import { loadCompletedSessionRecap } from "../src/sessionRecap/completedSessionStore";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow } from "../src/ui";
@@ -25,7 +26,11 @@ export default function RecapScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ sessionId?: string }>();
-  const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(typeof params.sessionId === "string" && params.sessionId.trim() ? params.sessionId : null);
+  const { user } = useAccount();
+  const userId = user?.user_id ?? null;
+  const [resolvedSessionId, setResolvedSessionId] = useState<string | null>(
+    typeof params.sessionId === "string" && params.sessionId.trim() ? params.sessionId : null,
+  );
   const [resolving, setResolving] = useState(!resolvedSessionId);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,38 +38,66 @@ export default function RecapScreen() {
 
   useEffect(() => {
     if (resolvedSessionId) return;
+    if (!userId) {
+      setResolving(false);
+      return;
+    }
     let cancelled = false;
     void (async () => {
-      const sid = await loadLastRecapSessionId().catch(() => null);
-      if (!cancelled) { setResolvedSessionId(sid); setResolving(false); }
+      const sid = await loadLastRecapSessionId(userId).catch(() => null);
+      if (!cancelled) {
+        setResolvedSessionId(sid);
+        setResolving(false);
+      }
     })();
-    return () => { cancelled = true; };
-  }, [resolvedSessionId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedSessionId, userId]);
 
   useEffect(() => {
-    if (!resolvedSessionId) { setLoading(false); setRecap(null); return; }
+    if (!userId || !resolvedSessionId) {
+      setLoading(false);
+      setRecap(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
     void (async () => {
-      const result = await loadCompletedSessionRecap(resolvedSessionId);
+      const result = await loadCompletedSessionRecap(userId, resolvedSessionId);
       if (cancelled) return;
       if (result.loadError) setError(result.loadError);
-      if (!result.data) { setRecap(null); setError("Recap not found for this session."); }
-      else { setRecap(result.data); track("session_recap_viewed", { session_id: resolvedSessionId }); }
+      if (!result.data) {
+        setRecap(null);
+        setError("Recap not found for this session.");
+      } else {
+        setRecap(result.data);
+        track("session_recap_viewed", { session_id: resolvedSessionId });
+      }
       setLoading(false);
     })();
-    return () => { cancelled = true; };
-  }, [resolvedSessionId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedSessionId, userId]);
 
   if (resolving || loading) {
-    return <View style={[s.screen, s.centered, { paddingTop: insets.top + 16 }]}><ActivityIndicator color={C.volt} /><Text style={s.sub}>Building recap…</Text></View>;
+    return (
+      <View style={[s.screen, s.centered, { paddingTop: insets.top + 16 }]}>
+        <ActivityIndicator color={C.volt} />
+        <Text style={s.sub}>Building recap…</Text>
+      </View>
+    );
   }
 
   if (!resolvedSessionId || error || !recap) {
     return (
       <View style={[s.screen, s.centered, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
-        <Eyebrow color={C.red}>NO RECAP</Eyebrow><Text style={s.title}>Nothing to show yet.</Text><Text style={s.sub}>{error ?? "Finish a session to see your results here."}</Text><Btn label="Back home" onPress={() => router.replace("/" as never)} />
+        <Eyebrow color={C.red}>NO RECAP</Eyebrow>
+        <Text style={s.title}>Nothing to show yet.</Text>
+        <Text style={s.sub}>{error ?? "Finish a session to see your results here."}</Text>
+        <Btn label="Back home" onPress={() => router.replace("/" as never)} />
       </View>
     );
   }
@@ -81,13 +114,24 @@ export default function RecapScreen() {
         <View style={s.heroMetric}>
           <Text style={s.heroValue}>{landedPct(recap)}</Text>
           <Text style={s.heroLabel}>LAND RATE</Text>
-          <Text style={s.heroMeta}>{recap.landed_count} landed · {recap.missed_count} missed · {recap.attempts_count} attempts</Text>
+          <Text style={s.heroMeta}>
+            {recap.landed_count} landed · {recap.missed_count} missed · {recap.attempts_count} attempts
+          </Text>
         </View>
 
         <View style={s.metricRow}>
-          <View style={s.metric}><Text style={s.metricValue}>{recap.attempts_count}</Text><Text style={s.metricLabel}>ATTEMPTS</Text></View>
-          <View style={s.metric}><Text style={s.metricValue}>{recap.landed_count}</Text><Text style={s.metricLabel}>LANDED</Text></View>
-          <View style={s.metric}><Text style={s.metricValue}>{formatDuration(recap.duration_seconds)}</Text><Text style={s.metricLabel}>TIME</Text></View>
+          <View style={s.metric}>
+            <Text style={s.metricValue}>{recap.attempts_count}</Text>
+            <Text style={s.metricLabel}>ATTEMPTS</Text>
+          </View>
+          <View style={s.metric}>
+            <Text style={s.metricValue}>{recap.landed_count}</Text>
+            <Text style={s.metricLabel}>LANDED</Text>
+          </View>
+          <View style={s.metric}>
+            <Text style={s.metricValue}>{formatDuration(recap.duration_seconds)}</Text>
+            <Text style={s.metricLabel}>TIME</Text>
+          </View>
         </View>
 
         {recap.trick_breakdown.length > 0 ? (
@@ -95,17 +139,31 @@ export default function RecapScreen() {
             <Eyebrow>WHAT YOU WORKED</Eyebrow>
             {recap.trick_breakdown.map((row) => (
               <View key={row.canonicalName} style={s.breakdownRow}>
-                <View style={{ flex: 1 }}><Text style={s.breakdownTrick}>{row.canonicalName}</Text><Text style={s.breakdownMeta}>{row.landed} landed · {row.missed} missed</Text></View>
-                <Text style={s.breakdownRate}>{row.landed + row.missed > 0 ? `${Math.round((row.landed / (row.landed + row.missed)) * 100)}%` : "—"}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.breakdownTrick}>{row.canonicalName}</Text>
+                  <Text style={s.breakdownMeta}>{row.landed} landed · {row.missed} missed</Text>
+                </View>
+                <Text style={s.breakdownRate}>
+                  {row.landed + row.missed > 0
+                    ? `${Math.round((row.landed / (row.landed + row.missed)) * 100)}%`
+                    : "—"}
+                </Text>
               </View>
             ))}
           </View>
-        ) : <Card accent={C.red}><Eyebrow color={C.red}>NO ATTEMPTS</Eyebrow><Text style={s.cardCopy}>You ended this session without logging attempts. No numbers were invented.</Text></Card>}
+        ) : (
+          <Card accent={C.red}>
+            <Eyebrow color={C.red}>NO ATTEMPTS</Eyebrow>
+            <Text style={s.cardCopy}>You ended this session without logging attempts. No numbers were invented.</Text>
+          </Card>
+        )}
 
         <Card accent={C.volt}>
           <Eyebrow color={C.volt}>NEXT</Eyebrow>
           <Text style={s.cardTitle}>Keep the progression record moving.</Text>
-          <Text style={s.cardCopy}>PTE.Flow separates self-reported consistency from video evidence so you can see what is improving without fake precision.</Text>
+          <Text style={s.cardCopy}>
+            PTE.Flow separates self-reported consistency from video evidence so you can see what is improving without fake precision.
+          </Text>
         </Card>
       </ScrollView>
 
@@ -131,7 +189,15 @@ const s = StyleSheet.create({
   metric: { flex: 1, backgroundColor: C.charcoal2, borderRadius: 12, padding: 13 },
   metricValue: { fontFamily: F.heading, fontSize: 22, color: C.offwhite },
   metricLabel: { fontFamily: F.mono, fontSize: 8, letterSpacing: 0.7, color: C.dim, marginTop: 3 },
-  breakdownRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.charcoal2, borderRadius: 12, padding: 14, borderLeftWidth: 3, borderLeftColor: C.volt },
+  breakdownRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.charcoal2,
+    borderRadius: 12,
+    padding: 14,
+    borderLeftWidth: 3,
+    borderLeftColor: C.volt,
+  },
   breakdownTrick: { fontFamily: F.bold, fontSize: 15, color: C.offwhite },
   breakdownMeta: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 2 },
   breakdownRate: { fontFamily: F.heading, fontSize: 19, color: C.volt },

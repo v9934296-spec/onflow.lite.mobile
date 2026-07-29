@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@react-native-async-storage/async-storage", () => {
   const store = new Map<string, string>();
@@ -26,14 +26,18 @@ import {
 } from "../../sessionAttempts/sessionAttemptStore";
 import { buildSessionAttempt } from "../../types/sessionAttempt";
 
+const USER_A = "user-a";
+const USER_B = "user-b";
+
 describe("sessionAttemptStore", () => {
   afterEach(async () => {
-    await clearSessionAttempts("sess-1");
-    await clearSessionAttempts("sess-2");
+    await clearSessionAttempts(USER_A, "sess-1");
+    await clearSessionAttempts(USER_A, "sess-2");
+    await clearSessionAttempts(USER_B, "sess-1");
   });
 
   it("returns empty list for unknown session", async () => {
-    const result = await loadSessionAttempts("unknown");
+    const result = await loadSessionAttempts(USER_A, "unknown");
     expect(result.data).toEqual([]);
   });
 
@@ -45,17 +49,16 @@ describe("sessionAttemptStore", () => {
       outcome: "landed",
     });
 
-    const save = await appendSessionAttempt(attempt);
-    expect(save.ok).toBe(true);
-
-    const loaded = await loadSessionAttempts("sess-1");
+    expect((await appendSessionAttempt(USER_A, attempt)).ok).toBe(true);
+    const loaded = await loadSessionAttempts(USER_A, "sess-1");
     expect(loaded.data).toHaveLength(1);
     expect(loaded.data[0]?.outcome).toBe("landed");
     expect(loaded.data[0]?.trickId).toBe("kickflip");
   });
 
-  it("keeps attempts isolated by session id", async () => {
+  it("keeps attempts isolated by user and session id", async () => {
     await appendSessionAttempt(
+      USER_A,
       buildSessionAttempt({
         sessionId: "sess-1",
         trickId: "kickflip",
@@ -64,6 +67,7 @@ describe("sessionAttemptStore", () => {
       }),
     );
     await appendSessionAttempt(
+      USER_A,
       buildSessionAttempt({
         sessionId: "sess-2",
         trickId: "heelflip",
@@ -72,12 +76,14 @@ describe("sessionAttemptStore", () => {
       }),
     );
 
-    expect((await loadSessionAttempts("sess-1")).data).toHaveLength(1);
-    expect((await loadSessionAttempts("sess-2")).data[0]?.outcome).toBe("landed");
+    expect((await loadSessionAttempts(USER_A, "sess-1")).data).toHaveLength(1);
+    expect((await loadSessionAttempts(USER_A, "sess-2")).data[0]?.outcome).toBe("landed");
+    expect((await loadSessionAttempts(USER_B, "sess-1")).data).toEqual([]);
   });
 
-  it("clears attempts for one session", async () => {
+  it("clears attempts for one session without touching another", async () => {
     await appendSessionAttempt(
+      USER_A,
       buildSessionAttempt({
         sessionId: "sess-1",
         trickId: "kickflip",
@@ -86,6 +92,7 @@ describe("sessionAttemptStore", () => {
       }),
     );
     await appendSessionAttempt(
+      USER_A,
       buildSessionAttempt({
         sessionId: "sess-2",
         trickId: "heelflip",
@@ -94,8 +101,8 @@ describe("sessionAttemptStore", () => {
       }),
     );
 
-    await clearSessionAttempts("sess-1");
-    expect((await loadSessionAttempts("sess-1")).data).toEqual([]);
-    expect((await loadSessionAttempts("sess-2")).data).toHaveLength(1);
+    await clearSessionAttempts(USER_A, "sess-1");
+    expect((await loadSessionAttempts(USER_A, "sess-1")).data).toEqual([]);
+    expect((await loadSessionAttempts(USER_A, "sess-2")).data).toHaveLength(1);
   });
 });

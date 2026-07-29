@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@react-native-async-storage/async-storage", () => {
   const store = new Map<string, string>();
@@ -27,33 +27,43 @@ import {
   saveLastRecapSessionId,
 } from "../activeSessionStore";
 
+const USER_A = "user-a";
+const USER_B = "user-b";
+
 describe("activeSessionStore", () => {
   afterEach(async () => {
-    await clearActiveSessionId();
+    await clearActiveSessionId(USER_A);
+    await clearActiveSessionId(USER_B);
   });
 
   it("returns null when no active session is stored", async () => {
-    expect(await loadActiveSessionId()).toBeNull();
+    expect(await loadActiveSessionId(USER_A)).toBeNull();
   });
 
   it("saves and loads active session id", async () => {
-    await saveActiveSessionId("sess-abc");
-    expect(await loadActiveSessionId()).toBe("sess-abc");
+    await saveActiveSessionId(USER_A, "sess-abc");
+    expect(await loadActiveSessionId(USER_A)).toBe("sess-abc");
+  });
+
+  it("does not expose one user's active session to another", async () => {
+    await saveActiveSessionId(USER_A, "sess-abc");
+    expect(await loadActiveSessionId(USER_B)).toBeNull();
   });
 
   it("clears stored session id", async () => {
-    await saveActiveSessionId("sess-abc");
-    await clearActiveSessionId();
-    expect(await loadActiveSessionId()).toBeNull();
+    await saveActiveSessionId(USER_A, "sess-abc");
+    await clearActiveSessionId(USER_A);
+    expect(await loadActiveSessionId(USER_A)).toBeNull();
   });
 
   it("ignores blank session ids", async () => {
-    await saveActiveSessionId("   ");
-    expect(await loadActiveSessionId()).toBeNull();
+    await saveActiveSessionId(USER_A, "   ");
+    expect(await loadActiveSessionId(USER_A)).toBeNull();
   });
 
   it("saves and loads last recap session id", async () => {
-    await saveLastRecapSessionId("recap-sess");
-    expect(await loadLastRecapSessionId()).toBe("recap-sess");
+    await saveLastRecapSessionId(USER_A, "recap-sess");
+    expect(await loadLastRecapSessionId(USER_A)).toBe("recap-sess");
+    expect(await loadLastRecapSessionId(USER_B)).toBeNull();
   });
 });

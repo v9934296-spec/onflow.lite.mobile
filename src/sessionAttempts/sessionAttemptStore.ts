@@ -1,10 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { userScopedStorageKey } from "../storage/userScopedStorage";
 import type { LoadResult, StorageResult } from "../types";
 import type { SessionAttempt } from "../types/sessionAttempt";
 
-const KEY = "onflow.sessionAttempts.v1";
-
 type AttemptStore = Record<string, SessionAttempt[]>;
+
+function keyFor(userId: string): string {
+  return userScopedStorageKey(userId, "sessionAttempts");
+}
 
 function isSessionAttempt(value: unknown): value is SessionAttempt {
   if (!value || typeof value !== "object") return false;
@@ -19,9 +23,9 @@ function isSessionAttempt(value: unknown): value is SessionAttempt {
   );
 }
 
-async function loadStore(): Promise<LoadResult<AttemptStore>> {
+async function loadStore(userId: string): Promise<LoadResult<AttemptStore>> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
+    const raw = await AsyncStorage.getItem(keyFor(userId));
     if (!raw) return { data: {} };
 
     const parsed: unknown = JSON.parse(raw);
@@ -44,9 +48,9 @@ async function loadStore(): Promise<LoadResult<AttemptStore>> {
   }
 }
 
-async function saveStore(store: AttemptStore): Promise<StorageResult> {
+async function saveStore(userId: string, store: AttemptStore): Promise<StorageResult> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(store));
+    await AsyncStorage.setItem(keyFor(userId), JSON.stringify(store));
     return { ok: true };
   } catch (error) {
     return {
@@ -56,33 +60,39 @@ async function saveStore(store: AttemptStore): Promise<StorageResult> {
   }
 }
 
-export async function loadSessionAttempts(sessionId: string): Promise<LoadResult<SessionAttempt[]>> {
+export async function loadSessionAttempts(
+  userId: string,
+  sessionId: string,
+): Promise<LoadResult<SessionAttempt[]>> {
   const sid = sessionId.trim();
   if (!sid) return { data: [] };
 
-  const result = await loadStore();
+  const result = await loadStore(userId);
   return {
     data: result.data[sid] ?? [],
     loadError: result.loadError,
   };
 }
 
-export async function appendSessionAttempt(attempt: SessionAttempt): Promise<StorageResult> {
+export async function appendSessionAttempt(
+  userId: string,
+  attempt: SessionAttempt,
+): Promise<StorageResult> {
   const sid = attempt.sessionId.trim();
   if (!sid) return { ok: false, error: "Missing session id" };
 
-  const result = await loadStore();
+  const result = await loadStore(userId);
   const next = [...(result.data[sid] ?? []), attempt];
-  return saveStore({ ...result.data, [sid]: next });
+  return saveStore(userId, { ...result.data, [sid]: next });
 }
 
-export async function clearSessionAttempts(sessionId: string): Promise<StorageResult> {
+export async function clearSessionAttempts(userId: string, sessionId: string): Promise<StorageResult> {
   const sid = sessionId.trim();
   if (!sid) return { ok: true };
 
-  const result = await loadStore();
+  const result = await loadStore(userId);
   if (!result.data[sid]) return { ok: true };
 
   const { [sid]: _removed, ...rest } = result.data;
-  return saveStore(rest);
+  return saveStore(userId, rest);
 }

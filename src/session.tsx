@@ -6,11 +6,14 @@ import React, {
   useRef,
   useState,
 } from "react";
+
 import { track } from "./analytics";
+import { loadPendingAnalysisJob } from "./analysis/pendingAnalysisStore";
+import { useAccount } from "./auth/accountContext";
 import { loadAttempts, saveAttempts } from "./progress";
-import { Analysis, LandedAttempt, LoggedClip, ManualLog, StorageResult } from "./types";
-import type { SelectedTrick } from "./tricks/types";
 import { clearLog as clearLogStorage, loadLog, saveLog } from "./storage";
+import type { SelectedTrick } from "./tricks/types";
+import type { Analysis, LandedAttempt, LoggedClip, ManualLog, StorageResult } from "./types";
 
 interface SessionState {
   isHydrated: boolean;
@@ -43,6 +46,8 @@ function storageFailure(result: StorageResult, fallback: string): string | null 
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAccount();
+  const userId = user?.user_id ?? null;
   const [isHydrated, setIsHydrated] = useState(false);
   const [trick, setTrickState] = useState<string | null>(null);
   const [selectedTrick, setSelectedTrickState] = useState<SelectedTrick | null>(null);
@@ -64,36 +69,62 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
+    setIsHydrated(false);
+    setStorageWarning(null);
+    setTrickState(null);
+    setSelectedTrickState(null);
+    setAnalysis(null);
+    setPendingClipJobId(null);
+    logRef.current = [];
+    attemptsRef.current = [];
+    setLog([]);
+    setAttempts([]);
+
+    if (!userId) {
+      setIsHydrated(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const hydrate = async () => {
       try {
-        const [logResult, attemptsResult] = await Promise.all([loadLog(), loadAttempts()]);
+        const [logResult, attemptsResult, pendingResult] = await Promise.all([
+          loadLog(userId),
+          loadAttempts(userId),
+          loadPendingAnalysisJob(userId),
+        ]);
         if (cancelled) return;
 
-        // Scripted sample clips are demonstrations, never part of the skater's
-        // self-reported progress record. This also cleans legacy sample attempts.
         const userAttempts = attemptsResult.data.filter((attempt) => attempt.source === "user");
-
         logRef.current = logResult.data;
         attemptsRef.current = userAttempts;
         setLog(logResult.data);
         setAttempts(userAttempts);
-        setIsHydrated(true);
+
+        if (pendingResult.data) {
+          setPendingClipJobId(pendingResult.data.jobId);
+          setTrickState(pendingResult.data.trickName);
+          setSelectedTrickState(pendingResult.data.selectedTrick);
+        }
 
         if (logResult.loadError) warnStorage(`Couldn't load session log — ${logResult.loadError}`);
         if (attemptsResult.loadError) warnStorage(`Couldn't load progress — ${attemptsResult.loadError}`);
+        if (pendingResult.loadError) warnStorage(`Couldn't restore analysis — ${pendingResult.loadError}`);
 
         if (userAttempts.length !== attemptsResult.data.length) {
-          const cleanupResult = await saveAttempts(userAttempts);
+          const cleanupResult = await saveAttempts(userId, userAttempts);
           if (!cleanupResult.ok && !cancelled) {
             warnStorage("Couldn't remove legacy sample data from saved progress");
           }
         }
       } catch (error) {
         if (cancelled) return;
-        setIsHydrated(true);
         warnStorage(
           `Couldn't restore saved session — ${error instanceof Error ? error.message : "unknown error"}`,
         );
+      } finally {
+        if (!cancelled) setIsHydrated(true);
       }
     };
 
@@ -101,10 +132,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [warnStorage]);
+  }, [userId, warnStorage]);
 
   const reportManualLog = useCallback(
     async (manual: ManualLog) => {
+      if (!userId) throw new Error("Sign in before saving an attempt.");
       if (!analysis) throw new Error("No active analysis is available to log.");
 
       const entry: LoggedClip = {
@@ -138,9 +170,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       }
 
       const [logResult, attemptsResult] = await Promise.all([
-        saveLog(nextLog),
+        saveLog(userId, nextLog),
         analysis.source === "user"
-          ? saveAttempts(nextAttempts)
+          ? saveAttempts(userId, nextAttempts)
           : Promise.resolve<StorageResult>({ ok: true }),
       ]);
 
@@ -161,11 +193,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         countedTowardProgress: analysis.source === "user",
       });
     },
-    [analysis, warnStorage],
+    [analysis, userId, warnStorage],
   );
 
   const deleteClip = useCallback(
     async (id: string) => {
+      if (!userId) throw new Error("Sign in before changing the session log.");
       const nextLog = logRef.current.filter((entry) => entry.id !== id);
       const nextAttempts = attemptsRef.current.filter((attempt) => attempt.id !== id);
 
@@ -175,8 +208,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setAttempts(nextAttempts);
 
       const [logResult, attemptsResult] = await Promise.all([
-        saveLog(nextLog),
-        saveAttempts(nextAttempts),
+        saveLog(userId, nextLog),
+        saveAttempts(userId, nextAttempts),
       ]);
 
       const failures = [
@@ -186,11 +219,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
       if (failures.length > 0) warnStorage(failures.join(" · "));
     },
-    [warnStorage],
+    [userId, warnStorage],
   );
 
   const clearSessionLog = useCallback(async () => {
-    const result = await clearLogStorage();
+    if (!userId) throw new Error("Sign in before clearing the session log.");
+    const result = await clearLogStorage(userId);
     if (!result.ok) {
       warnStorage("Couldn't clear log from storage");
       return;
@@ -199,7 +233,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     logRef.current = [];
     setLog([]);
     track("log_cleared");
-  }, [warnStorage]);
+  }, [userId, warnStorage]);
 
   const setTrick = useCallback((value: string | null) => {
     setTrickState(value);
@@ -214,7 +248,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTrickState(null);
     setSelectedTrickState(null);
     setAnalysis(null);
-    setPendingClipJobId(null);
   }, []);
 
   return (

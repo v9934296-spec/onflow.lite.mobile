@@ -15,6 +15,7 @@ import {
   saveLastRecapSessionId,
 } from "../activeSessionStore";
 import { createSkateSession, fetchSkateSession, updateSkateSession } from "../api/sessionApi";
+import { useAccount } from "../auth/accountContext";
 import { useAuth } from "../auth/authContext";
 import { buildSessionRecap } from "../sessionRecap/buildSessionRecap";
 import { saveCompletedSessionRecap } from "../sessionRecap/completedSessionStore";
@@ -22,6 +23,12 @@ import { loadSessionAttempts } from "../sessionAttempts/sessionAttemptStore";
 import type { SkateSession } from "../types/api/session";
 import { isSkateSessionActive } from "../types/api/session";
 import type { SessionRecap } from "../types/sessionRecap";
+import {
+  clearPendingSessionCompletion,
+  loadPendingSessionCompletion,
+  savePendingSessionCompletion,
+  type PendingSessionCompletion,
+} from "./sessionCompletionStore";
 
 export type SkateSessionHydrateState = "idle" | "loading" | "ready" | "error";
 
@@ -47,8 +54,46 @@ type SkateSessionContextValue = {
 
 const SkateSessionContext = createContext<SkateSessionContextValue | null>(null);
 
+async function persistCompletedSession(
+  userId: string,
+  pending: PendingSessionCompletion,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const saveResult = await saveCompletedSessionRecap(userId, pending.recap);
+  if (!saveResult.ok) return saveResult;
+
+  try {
+    await saveLastRecapSessionId(userId, pending.sessionId);
+    await clearActiveSessionId(userId);
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Failed to finalize session storage",
+    };
+  }
+
+  const clearJournal = await clearPendingSessionCompletion(userId);
+  return clearJournal.ok ? { ok: true } : clearJournal;
+}
+
+async function recoverPendingCompletion(
+  userId: string,
+  pending: PendingSessionCompletion,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const fetched = await fetchSkateSession(pending.sessionId);
+  if (!fetched.ok) return { ok: false, error: fetched.error.message };
+
+  if (fetched.data && isSkateSessionActive(fetched.data)) {
+    const updated = await updateSkateSession(pending.sessionId, { ended_at: pending.endedAt });
+    if (!updated.ok) return { ok: false, error: updated.error.message };
+  }
+
+  return persistCompletedSession(userId, pending);
+}
+
 export function SkateSessionProvider({ children }: { children: React.ReactNode }) {
   const { phase } = useAuth();
+  const { user } = useAccount();
+  const userId = user?.user_id ?? null;
   const [activeSession, setActiveSession] = useState<SkateSession | null>(null);
   const [hydrateState, setHydrateState] = useState<SkateSessionHydrateState>("idle");
   const [hydrateError, setHydrateError] = useState<string | null>(null);
@@ -60,13 +105,34 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
   const endingRef = useRef(false);
 
   const refreshActiveSession = useCallback(async () => {
+    if (!userId || phase !== "signed_in") {
+      setActiveSession(null);
+      setHydrateState("idle");
+      return;
+    }
+
     setHydrateState("loading");
     setHydrateError(null);
-    const storedId = await loadActiveSessionId();
+
+    const pendingResult = await loadPendingSessionCompletion(userId);
+    if (pendingResult.loadError) {
+      setHydrateState("error");
+      setHydrateError(pendingResult.loadError);
+      return;
+    }
+    if (pendingResult.data) {
+      const recovered = await recoverPendingCompletion(userId, pendingResult.data);
+      if (!recovered.ok) {
+        setHydrateState("error");
+        setHydrateError(recovered.error);
+        return;
+      }
+    }
+
+    const storedId = await loadActiveSessionId(userId);
     if (!storedId) {
       setActiveSession(null);
       setHydrateState("ready");
-      setHydrateError(null);
       return;
     }
 
@@ -79,34 +145,49 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
     }
 
     if (!result.data || !isSkateSessionActive(result.data)) {
-      await clearActiveSessionId();
+      await clearActiveSessionId(userId);
       setActiveSession(null);
       setHydrateState("ready");
-      setHydrateError(null);
       return;
     }
 
     setActiveSession(result.data);
     setHydrateState("ready");
-    setHydrateError(null);
-  }, []);
+  }, [phase, userId]);
 
   useEffect(() => {
-    if (phase !== "signed_in") {
+    if (phase !== "signed_in" || !userId) {
       setActiveSession(null);
       setHydrateState("idle");
       setHydrateError(null);
       setCreateError(null);
       setEndError(null);
-      void clearActiveSessionId();
       return;
     }
 
     let cancelled = false;
     setHydrateState("loading");
     setHydrateError(null);
+
     void (async () => {
-      const storedId = await loadActiveSessionId();
+      const pendingResult = await loadPendingSessionCompletion(userId);
+      if (cancelled) return;
+      if (pendingResult.loadError) {
+        setHydrateState("error");
+        setHydrateError(pendingResult.loadError);
+        return;
+      }
+      if (pendingResult.data) {
+        const recovered = await recoverPendingCompletion(userId, pendingResult.data);
+        if (cancelled) return;
+        if (!recovered.ok) {
+          setHydrateState("error");
+          setHydrateError(recovered.error);
+          return;
+        }
+      }
+
+      const storedId = await loadActiveSessionId(userId);
       if (cancelled) return;
       if (!storedId) {
         setActiveSession(null);
@@ -124,7 +205,7 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
       }
 
       if (!result.data || !isSkateSessionActive(result.data)) {
-        await clearActiveSessionId();
+        await clearActiveSessionId(userId);
         setActiveSession(null);
         setHydrateState("ready");
         return;
@@ -137,10 +218,10 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
     return () => {
       cancelled = true;
     };
-  }, [phase]);
+  }, [phase, userId]);
 
   const startSession = useCallback(async (): Promise<boolean> => {
-    if (creatingRef.current || isCreating) return false;
+    if (!userId || creatingRef.current || isCreating) return false;
     if (isSkateSessionActive(activeSession)) return true;
 
     creatingRef.current = true;
@@ -152,19 +233,22 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
         setCreateError(result.error.message);
         return false;
       }
-      await saveActiveSessionId(result.data.id);
+      await saveActiveSessionId(userId, result.data.id);
       setActiveSession(result.data);
       setHydrateState("ready");
       setHydrateError(null);
       return true;
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "Could not save the active session");
+      return false;
     } finally {
       creatingRef.current = false;
       setIsCreating(false);
     }
-  }, [activeSession, isCreating]);
+  }, [activeSession, isCreating, userId]);
 
   const endSession = useCallback(async (): Promise<EndSessionResult> => {
-    if (!activeSession || endingRef.current || isEnding) {
+    if (!userId || !activeSession || endingRef.current || isEnding) {
       return { ok: false, error: "No active session to end." };
     }
 
@@ -176,33 +260,49 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
     setEndError(null);
 
     try {
+      const attemptsResult = await loadSessionAttempts(userId, sessionId);
+      if (attemptsResult.loadError) {
+        setEndError(attemptsResult.loadError);
+        return { ok: false, error: attemptsResult.loadError };
+      }
+
+      const recap = buildSessionRecap(activeSession, attemptsResult.data, endedAt);
+      const pending: PendingSessionCompletion = { sessionId, endedAt, recap };
+      const journalResult = await savePendingSessionCompletion(userId, pending);
+      if (!journalResult.ok) {
+        setEndError(journalResult.error);
+        return { ok: false, error: journalResult.error };
+      }
+
       const updateResult = await updateSkateSession(sessionId, { ended_at: endedAt });
       if (!updateResult.ok) {
-        const message = updateResult.error.message;
-        setEndError(message);
-        return { ok: false, error: message };
+        const fetched = await fetchSkateSession(sessionId);
+        const alreadyEnded = fetched.ok && fetched.data && !isSkateSessionActive(fetched.data);
+        if (!alreadyEnded) {
+          const message = updateResult.error.message;
+          setEndError(message);
+          return { ok: false, error: message };
+        }
       }
 
-      const attemptsResult = await loadSessionAttempts(sessionId);
-      const recap = buildSessionRecap(activeSession, attemptsResult.data, endedAt);
-
-      const saveResult = await saveCompletedSessionRecap(recap);
-      if (!saveResult.ok) {
-        const message = saveResult.error;
-        setEndError(message);
-        return { ok: false, error: message };
+      const persisted = await persistCompletedSession(userId, pending);
+      if (!persisted.ok) {
+        setEndError(persisted.error);
+        return { ok: false, error: persisted.error };
       }
 
-      await saveLastRecapSessionId(sessionId);
-      await clearActiveSessionId();
       setActiveSession(null);
       setHydrateState("ready");
       return { ok: true, recap };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not finish the session";
+      setEndError(message);
+      return { ok: false, error: message };
     } finally {
       endingRef.current = false;
       setIsEnding(false);
     }
-  }, [activeSession, isEnding]);
+  }, [activeSession, isEnding, userId]);
 
   const dismissEndError = useCallback(() => setEndError(null), []);
 

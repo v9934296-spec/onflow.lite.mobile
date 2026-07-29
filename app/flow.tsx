@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppNav } from "../src/components/AppNav";
 import { createSkateSession } from "../src/api/sessionApi";
 import { saveActiveSessionId } from "../src/activeSessionStore";
+import { useAccount } from "../src/auth/accountContext";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSessionAttempts } from "../src/sessionAttempts/useSessionAttempts";
 import { useSession } from "../src/session";
@@ -14,11 +15,14 @@ import { Btn, Card, Eyebrow } from "../src/ui";
 export default function FlowScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { selectedTrick, resetLoop } = useSession();
+  const { user } = useAccount();
+  const userId = user?.user_id ?? null;
+  const { selectedTrick, resetLoop, pendingClipJobId } = useSession();
   const {
     activeSession,
     hasActiveSession,
     hydrateState,
+    hydrateError,
     isCreating,
     createError,
     startSession,
@@ -26,14 +30,26 @@ export default function FlowScreen() {
     endSession,
     isEnding,
     endError,
+    dismissEndError,
   } = useSkateSession();
-  const { counts, isSubmitting, submitError, logAttempt } = useSessionAttempts(activeSession?.id ?? null);
+  const {
+    counts,
+    isSubmitting,
+    submitError,
+    logAttempt,
+    dismissSubmitError,
+  } = useSessionAttempts(activeSession?.id ?? null);
   const [startingBattle, setStartingBattle] = useState(false);
 
   const isBattle = activeSession?.notes?.startsWith("[battle]") ?? false;
+  const analysisPending = Boolean(pendingClipJobId);
   const busy = isCreating || startingBattle || isSubmitting || isEnding || hydrateState === "loading";
 
   async function openSession(mode: "session" | "battle") {
+    if (analysisPending) {
+      router.push("/analyzing" as never);
+      return;
+    }
     if (busy) return;
     if (hasActiveSession) {
       router.push("/trick?returnTo=/flow" as never);
@@ -45,6 +61,10 @@ export default function FlowScreen() {
       if (ok) router.push("/trick?returnTo=/flow" as never);
       return;
     }
+    if (!userId) {
+      Alert.alert("Sign-in required", "Sign in before starting a Battle so the session can be stored under your account.");
+      return;
+    }
 
     setStartingBattle(true);
     try {
@@ -53,9 +73,14 @@ export default function FlowScreen() {
         Alert.alert("Could not start battle", result.error.message);
         return;
       }
-      await saveActiveSessionId(result.data.id);
+      await saveActiveSessionId(userId, result.data.id);
       await refreshActiveSession();
       router.push("/trick?returnTo=/flow" as never);
+    } catch (error) {
+      Alert.alert(
+        "Could not save battle",
+        error instanceof Error ? error.message : "The active Battle could not be stored on this device.",
+      );
     } finally {
       setStartingBattle(false);
     }
@@ -87,6 +112,17 @@ export default function FlowScreen() {
           <Text style={s.subtitle}>Your session loop</Text>
         </View>
 
+        {analysisPending ? (
+          <Card accent={C.amber}>
+            <Eyebrow color={C.amber}>ANALYSIS IN PROGRESS</Eyebrow>
+            <Text style={s.cardHeading}>Finish the saved analysis first.</Text>
+            <Text style={s.body}>Resuming the existing job prevents duplicate uploads and duplicate quota usage.</Text>
+            <View style={s.actions}>
+              <Btn label="Resume Analysis" onPress={() => router.push("/analyzing" as never)} />
+            </View>
+          </Card>
+        ) : null}
+
         {!hasActiveSession ? (
           <Card>
             <Text style={s.welcome}>Sessions are how you film, upload, and build progression.</Text>
@@ -107,7 +143,7 @@ export default function FlowScreen() {
           ) : (
             <>
               <Text style={s.body}>No active session yet. Start one and get skating.</Text>
-              <View style={s.actions}><Btn label="Start Session" onPress={() => void openSession("session")} /></View>
+              <View style={s.actions}><Btn label="Start Session" onPress={() => void openSession("session")} disabled={analysisPending} /></View>
             </>
           )}
         </Card>
@@ -117,7 +153,7 @@ export default function FlowScreen() {
             <Eyebrow color={C.dim}>BATTLE</Eyebrow>
             <Text style={s.cardHeading}>One trick. Stay on it.</Text>
             <Text style={s.body}>Battle mode keeps the whole session centered on one trick without creating a separate session system.</Text>
-            <View style={s.actions}><Btn label="Start Battle" variant="red" onPress={() => void openSession("battle")} disabled={busy} /></View>
+            <View style={s.actions}><Btn label="Start Battle" variant="red" onPress={() => void openSession("battle")} disabled={busy || analysisPending} /></View>
           </Card>
         ) : null}
 
@@ -131,10 +167,10 @@ export default function FlowScreen() {
 
             {selectedTrick ? (
               <View style={s.attemptRow}>
-                <Pressable disabled={busy} onPress={() => void logAttempt(selectedTrick, "landed")} style={({ pressed }) => [s.attemptButton, s.landButton, (pressed || busy) && s.pressed]}>
+                <Pressable disabled={busy || analysisPending} onPress={() => void logAttempt(selectedTrick, "landed")} style={({ pressed }) => [s.attemptButton, s.landButton, (pressed || busy || analysisPending) && s.pressed]}>
                   <Text style={s.landText}>LAND</Text>
                 </Pressable>
-                <Pressable disabled={busy} onPress={() => void logAttempt(selectedTrick, "missed")} style={({ pressed }) => [s.attemptButton, s.missButton, (pressed || busy) && s.pressed]}>
+                <Pressable disabled={busy || analysisPending} onPress={() => void logAttempt(selectedTrick, "missed")} style={({ pressed }) => [s.attemptButton, s.missButton, (pressed || busy || analysisPending) && s.pressed]}>
                   <Text style={s.missText}>MISS</Text>
                 </Pressable>
               </View>
@@ -143,9 +179,9 @@ export default function FlowScreen() {
             <Card>
               <Eyebrow color={C.dim}>SESSION ACTIONS</Eyebrow>
               <View style={s.actions}>
-                <Btn label={selectedTrick ? "Film Clip" : "Choose Trick"} onPress={() => selectedTrick ? router.push("/capture" as never) : router.push("/trick?returnTo=/flow" as never)} disabled={busy} />
-                {!isBattle ? <Btn label="Change Trick" variant="ghost" onPress={() => router.push("/trick?returnTo=/flow" as never)} disabled={busy} /> : null}
-                <Btn label={isEnding ? "Ending…" : isBattle ? "End Battle" : "End Session"} variant="ghost" onPress={() => void finishSession()} disabled={busy} />
+                <Btn label={selectedTrick ? "Film Clip" : "Choose Trick"} onPress={() => selectedTrick ? router.push("/capture" as never) : router.push("/trick?returnTo=/flow" as never)} disabled={busy || analysisPending} />
+                {!isBattle ? <Btn label="Change Trick" variant="ghost" onPress={() => router.push("/trick?returnTo=/flow" as never)} disabled={busy || analysisPending} /> : null}
+                <Btn label={isEnding ? "Ending…" : isBattle ? "End Battle" : "End Session"} variant="ghost" onPress={() => void finishSession()} disabled={busy || analysisPending} />
               </View>
             </Card>
           </>
@@ -157,9 +193,27 @@ export default function FlowScreen() {
           <View style={s.actions}><Btn label="View Session History" variant="ghost" onPress={() => router.push("/history" as never)} /></View>
         </Card>
 
+        {hydrateError ? (
+          <View style={s.errorBlock}>
+            <Text style={s.error}>{hydrateError}</Text>
+            <Btn label="Retry session recovery" variant="ghost" onPress={() => void refreshActiveSession()} disabled={busy} />
+          </View>
+        ) : null}
         {createError ? <Text style={s.error}>{createError}</Text> : null}
-        {submitError ? <Text style={s.error}>{submitError}</Text> : null}
-        {endError ? <Text style={s.error}>{endError}</Text> : null}
+        {submitError ? (
+          <View style={s.errorBlock}>
+            <Text style={s.error}>{submitError}</Text>
+            <Btn label="Dismiss attempt error" variant="ghost" onPress={dismissSubmitError} />
+          </View>
+        ) : null}
+        {endError ? (
+          <View style={s.errorBlock}>
+            <Text style={s.error}>{endError}</Text>
+            <Text style={s.recoveryCopy}>The completion journal remains saved. Retry recovery instead of creating a duplicate recap.</Text>
+            <Btn label="Retry session recovery" variant="ghost" onPress={() => void refreshActiveSession()} disabled={busy} />
+            <Btn label="Dismiss" variant="ghost" onPress={dismissEndError} />
+          </View>
+        ) : null}
       </ScrollView>
       <AppNav />
     </View>
@@ -183,6 +237,8 @@ const s = StyleSheet.create({
   missButton: { backgroundColor: C.charcoal2, borderWidth: 2, borderColor: C.red },
   landText: { fontFamily: F.heading, fontSize: 24, color: C.charcoal },
   missText: { fontFamily: F.heading, fontSize: 24, color: C.red },
-  error: { fontFamily: F.body, color: C.red, fontSize: 13, textAlign: "center" },
+  errorBlock: { gap: 8 },
+  error: { fontFamily: F.body, color: C.red, fontSize: 13, lineHeight: 19, textAlign: "center" },
+  recoveryCopy: { fontFamily: F.body, color: C.dim, fontSize: 12, lineHeight: 18, textAlign: "center" },
   pressed: { opacity: 0.72 },
 });

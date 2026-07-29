@@ -1,3 +1,4 @@
+import { buildAuthHeaders, notifyAuthExpiredOn401 } from "./auth";
 import { getApiBaseUrl } from "./baseUrl";
 import { isExpoApiUrlConfigured } from "./config";
 import {
@@ -7,7 +8,6 @@ import {
   isNetworkFetchError,
   networkFailureHint,
 } from "./errors";
-import { buildAuthHeaders, notifyAuthExpiredOn401 } from "./auth";
 import { mergeApiTelemetryHeaders } from "./telemetry";
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
@@ -71,16 +71,19 @@ function devLog(method: string, url: string, status: number): void {
   }
 }
 
-/**
- * Centralized fetch wrapper. Returns ApiResult — never throws for HTTP/network errors.
- */
+/** Centralized fetch wrapper. Returns ApiResult — never throws for expected API/storage failures. */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
   if (!isExpoApiUrlConfigured()) {
     return failure("configuration", configurationFailureMessage());
   }
+  if (options.signal?.aborted) {
+    return failure("network", "Request cancelled.");
+  }
 
   const base = getApiBaseUrl();
-  const url = path.startsWith("http") ? path : `${base.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = path.startsWith("http")
+    ? path
+    : `${base.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
   const method = options.method ?? "GET";
   const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
@@ -91,11 +94,20 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   };
 
   if (options.auth) {
-    const authHeaders = await buildAuthHeaders();
-    if (!authHeaders) {
-      return failure("unauthorized", "Not signed in.");
+    try {
+      const authHeaders = await buildAuthHeaders();
+      if (!authHeaders) {
+        return failure("unauthorized", "Not signed in.");
+      }
+      Object.assign(headers, authHeaders);
+    } catch (error) {
+      return failure(
+        "storage",
+        error instanceof Error
+          ? error.message
+          : "Secure credential storage is unavailable on this device.",
+      );
     }
-    Object.assign(headers, authHeaders);
   }
 
   let body: string | undefined;
@@ -105,14 +117,22 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener("abort", abortFromCaller);
+  const timeoutId = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   let res: Response;
   try {
     res = await fetch(url, { method, headers, body, signal: controller.signal });
   } catch (error) {
     if (isAbortError(error)) {
-      return failure("timeout", `Request timed out after ${timeoutMs}ms.`);
+      return timedOut
+        ? failure("timeout", `Request timed out after ${timeoutMs}ms.`)
+        : failure("network", "Request cancelled.");
     }
     if (isNetworkFetchError(error)) {
       return failure("network", networkFailureHint(base));
@@ -121,6 +141,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     return failure("network", message);
   } finally {
     clearTimeout(timeoutId);
+    options.signal?.removeEventListener("abort", abortFromCaller);
   }
 
   notifyAuthExpiredOn401(res);

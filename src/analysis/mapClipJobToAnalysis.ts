@@ -7,16 +7,22 @@ function trickLabelsMatch(called: string, onFilm: string): boolean {
   return called.trim().toLowerCase() === onFilm.trim().toLowerCase();
 }
 
+function normalizedReadiness(readiness: string): "detected" | "limited" | "insufficient" {
+  const value = readiness.trim().toLowerCase();
+  if (["sufficient", "usable", "ready", "detected", "complete"].includes(value)) return "detected";
+  if (value === "limited") return "limited";
+  return "insufficient";
+}
+
 function observationTag(readiness: string): Observation["tag"] {
-  if (readiness === "insufficient") return "NO EVIDENCE";
-  if (readiness === "limited") return "ESTIMATE";
+  const normalized = normalizedReadiness(readiness);
+  if (normalized === "insufficient") return "NO EVIDENCE";
+  if (normalized === "limited") return "ESTIMATE";
   return "DETECTED";
 }
 
 function evidenceClassFromReadiness(readiness: string): Analysis["evidenceClass"] {
-  if (readiness === "insufficient") return "NO EVIDENCE";
-  if (readiness === "limited") return "ESTIMATE";
-  return "DETECTED";
+  return observationTag(readiness);
 }
 
 export function mapClipJobToAnalysis(
@@ -24,12 +30,13 @@ export function mapClipJobToAnalysis(
   trickCalled: string,
 ): Analysis {
   const { result } = job;
-  const trickOnFilm = result.clip_label?.trim() || null;
+  const trickOnFilm = result.clip_label.trim() || null;
   const mismatch = trickOnFilm ? !trickLabelsMatch(trickCalled, trickOnFilm) : false;
-  const insufficient = result.review_readiness === "insufficient";
+  const readiness = normalizedReadiness(result.review_readiness);
+  const insufficient = readiness === "insufficient";
   const normalized = result.normalized_review;
 
-  const observations: Observation[] = (result.observations ?? []).slice(0, 8).map((text) => ({
+  const observations: Observation[] = result.observations.slice(0, 8).map((text) => ({
     text,
     tag: observationTag(result.review_readiness),
   }));
@@ -43,27 +50,24 @@ export function mapClipJobToAnalysis(
 
   const verdict =
     result.skate_clip_review?.verdict?.trim() ||
-    normalized?.summary?.trim() ||
+    normalized?.summary.trim() ||
     result.review_summary.trim() ||
-    "Analysis complete.";
+    observations[0]?.text ||
+    "No readable review was returned.";
 
   const workOn =
     result.best_cue?.trim() ||
     result.first_actionable_cue_shown?.trim() ||
     normalized?.what_to_fix[0]?.trim() ||
     normalized?.drill?.trim() ||
-    "Review the observations and note what to try next.";
-
-  const rating = normalized?.score ?? null;
-  const confidence =
-    rating != null ? Math.min(100, Math.round((rating / 10) * 100)) : insufficient ? 0 : 50;
+    "No specific correction was returned for this clip.";
 
   return {
     trickCalled,
     trickOnFilm,
     mismatch,
-    abstained: insufficient && rating === null,
-    rating,
+    abstained: insufficient && normalized?.score == null,
+    rating: normalized?.score ?? null,
     verdict,
     observations,
     breakdown: result.skate_clip_review?.breakdown ?? null,
@@ -72,7 +76,7 @@ export function mapClipJobToAnalysis(
     source: "user",
     engineVersion: API_ENGINE_VERSION,
     evidenceClass: evidenceClassFromReadiness(result.review_readiness),
-    confidence,
+    confidence: result.model_confidence_percent,
     receipts: [
       {
         id: "job",
@@ -87,6 +91,6 @@ export function mapClipJobToAnalysis(
         detail: result.review_readiness,
       },
     ],
-    abstainReason: insufficient ? "Insufficient evidence in clip for automated rating." : null,
+    abstainReason: insufficient ? "The server did not return sufficient evidence for an automated rating." : null,
   };
 }

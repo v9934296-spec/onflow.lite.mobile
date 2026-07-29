@@ -15,6 +15,10 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 
 import { clearLog, loadLog, saveLog } from "../storage";
+import { userScopedStorageKey } from "../storage/userScopedStorage";
+
+const USER_A = "user-a";
+const USER_B = "user-b";
 
 describe("storage", () => {
   beforeEach(() => {
@@ -22,12 +26,12 @@ describe("storage", () => {
   });
 
   it("loads empty log when nothing saved", async () => {
-    const result = await loadLog();
+    const result = await loadLog(USER_A);
     expect(result.data).toEqual([]);
     expect(result.loadError).toBeUndefined();
   });
 
-  it("round-trips log entries", async () => {
+  it("round-trips log entries without exposing them to another user", async () => {
     const entry = {
       id: "1",
       loggedAt: "2026-07-10T00:00:00.000Z",
@@ -45,29 +49,30 @@ describe("storage", () => {
         source: "user" as const,
         engineVersion: "pte-lite-v0.1",
         evidenceClass: "NO EVIDENCE" as const,
-        confidence: 0,
+        confidence: null,
         receipts: [],
         abstainReason: "test",
       },
     };
-    const saveResult = await saveLog([entry]);
+    const saveResult = await saveLog(USER_A, [entry]);
     expect(saveResult.ok).toBe(true);
-    const loadResult = await loadLog();
-    expect(loadResult.data).toHaveLength(1);
+    expect((await loadLog(USER_A)).data).toHaveLength(1);
+    expect((await loadLog(USER_B)).data).toEqual([]);
   });
 
   it("returns loadError on corrupt JSON", async () => {
-    store["onflow_lite_log_v1"] = "{not json";
-    const result = await loadLog();
+    store[userScopedStorageKey(USER_A, "clipLog")] = "{not json";
+    const result = await loadLog(USER_A);
     expect(result.data).toEqual([]);
     expect(result.loadError).toBeDefined();
   });
 
-  it("clearLog removes stored data", async () => {
-    await saveLog([]);
-    const cleared = await clearLog();
+  it("clearLog removes only the selected user's data", async () => {
+    await saveLog(USER_A, []);
+    await saveLog(USER_B, []);
+    const cleared = await clearLog(USER_A);
     expect(cleared.ok).toBe(true);
-    const result = await loadLog();
-    expect(result.data).toEqual([]);
+    expect(await loadLog(USER_A)).toEqual({ data: [] });
+    expect(Object.keys(store)).toContain(userScopedStorageKey(USER_B, "clipLog"));
   });
 });
