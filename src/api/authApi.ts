@@ -72,13 +72,8 @@ function parseEmailSession(raw: unknown, email: string): AuthSignInResult | null
   };
 }
 
-export async function createEmailSession(
-  email: string,
-  inviteCode?: string,
-): Promise<ApiResult<AuthSignInResult>> {
-  const trimmedCode = inviteCode?.trim();
-  const body: { email: string; invite_code?: string } = { email: email.trim() };
-  if (trimmedCode) body.invite_code = trimmedCode;
+export async function createEmailSession(email: string): Promise<ApiResult<AuthSignInResult>> {
+  const body = { email: email.trim() };
 
   const result = await apiRequest<unknown>("/api/v1/auth/session", {
     method: "POST",
