@@ -13,7 +13,9 @@ import { Btn, Card, Eyebrow } from "../src/ui";
 function formatDate(iso?: string | null): string {
   if (!iso) return "None yet";
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? "None yet" : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return Number.isNaN(date.getTime())
+    ? "None yet"
+    : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -30,18 +32,26 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const { user } = useAccount();
   const { activeSession, hasActiveSession } = useSkateSession();
-  const { attempts, log, selectedTrick } = useSession();
+  const { attempts, log, selectedTrick, pendingClipJobId } = useSession();
 
   const streak = useMemo(() => getBestTrickStreak(attempts), [attempts]);
-  const latestAnalysis = useMemo(() => [...log].reverse().find((entry) => entry.analysis.source === "user"), [log]);
+  const latestAnalysis = useMemo(
+    () => [...log].reverse().find((entry) => entry.analysis.source === "user"),
+    [log],
+  );
   const bestPte = useMemo(() => {
-    const ratings = log.map((entry) => entry.analysis.rating).filter((v): v is number => typeof v === "number");
+    const ratings = log
+      .map((entry) => entry.analysis.rating)
+      .filter((value): value is number => typeof value === "number");
     return ratings.length ? Math.max(...ratings) : null;
   }, [log]);
   const isBattle = activeSession?.notes?.startsWith("[battle]") ?? false;
   const handle = user?.email?.split("@")[0]?.trim();
-  const objective = latestAnalysis?.analysis.workOn?.trim() || "Complete a filmed attempt to unlock your next coaching objective.";
+  const objective =
+    latestAnalysis?.analysis.workOn?.trim() ||
+    "Complete a filmed attempt to unlock your next coaching objective.";
   const focusName = selectedTrick?.canonicalName ?? activeSession?.focus_trick ?? null;
+  const analysisPending = Boolean(pendingClipJobId);
 
   return (
     <View style={[s.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}> 
@@ -52,12 +62,29 @@ export default function Home() {
           {handle ? <Text style={s.signedIn}>Signed in as {handle}</Text> : null}
         </View>
 
-        {!attempts.length && !log.length && !hasActiveSession ? (
+        {analysisPending ? (
+          <Card accent={C.amber}>
+            <Eyebrow color={C.amber}>ANALYSIS RECOVERED</Eyebrow>
+            <Text style={s.cardHeading}>Your unfinished analysis is still saved.</Text>
+            <Text style={s.body}>
+              OnFlow restored the job after the app closed. Resume checking the server instead of uploading the clip again.
+            </Text>
+            <View style={s.cardAction}>
+              <Btn label="Resume analysis" onPress={() => router.push("/analyzing" as never)} />
+            </View>
+          </Card>
+        ) : null}
+
+        {!attempts.length && !log.length && !hasActiveSession && !analysisPending ? (
           <Card accent={C.volt}>
             <Eyebrow color={C.dim}>WELCOME</Eyebrow>
             <Text style={s.cardHeading}>Welcome to OnFlow</Text>
-            <Text style={s.body}>Film skate clips, get honest coaching, and track progression over time. Start with your first session.</Text>
-            <View style={s.cardAction}><Btn label="Start Session" onPress={() => router.push("/flow" as never)} /></View>
+            <Text style={s.body}>
+              Film skate clips, get honest coaching, and track progression over time. Start with your first session.
+            </Text>
+            <View style={s.cardAction}>
+              <Btn label="Start Session" onPress={() => router.push("/flow" as never)} />
+            </View>
           </Card>
         ) : null}
 
@@ -67,7 +94,9 @@ export default function Home() {
             {focusName ? (
               <>
                 <Text style={s.cardHeading}>{focusName}</Text>
-                <Text style={s.body}>{isBattle ? "Battle active" : "Current focus"} · {attempts.length} logged entries</Text>
+                <Text style={s.body}>
+                  {isBattle ? "Battle active" : "Current focus"} · {attempts.length} logged entries
+                </Text>
                 {streak ? <Text style={s.momentum}>{streak.streak} day momentum</Text> : null}
               </>
             ) : (
@@ -85,10 +114,22 @@ export default function Home() {
           <Card>
             <Eyebrow color={C.dim}>QUICK PROGRESS SUMMARY</Eyebrow>
             <View style={s.statsList}>
-              <View style={s.statRow}><Text style={s.statLabel}>Sessions logged</Text><Text style={s.statValue}>{log.length || "None yet"}</Text></View>
-              <View style={s.statRow}><Text style={s.statLabel}>Active battles</Text><Text style={s.statValue}>{hasActiveSession && isBattle ? "1" : "0"}</Text></View>
-              <View style={s.statRow}><Text style={s.statLabel}>Last activity</Text><Text style={s.statValue}>{formatDate(log.at(-1)?.loggedAt)}</Text></View>
-              <View style={s.statRow}><Text style={s.statLabel}>Recent best PTE</Text><Text style={s.statValue}>{bestPte != null ? bestPte.toFixed(1) : "None yet"}</Text></View>
+              <View style={s.statRow}>
+                <Text style={s.statLabel}>Sessions logged</Text>
+                <Text style={s.statValue}>{log.length || "None yet"}</Text>
+              </View>
+              <View style={s.statRow}>
+                <Text style={s.statLabel}>Active battles</Text>
+                <Text style={s.statValue}>{hasActiveSession && isBattle ? "1" : "0"}</Text>
+              </View>
+              <View style={s.statRow}>
+                <Text style={s.statLabel}>Last activity</Text>
+                <Text style={s.statValue}>{formatDate(log.at(-1)?.loggedAt)}</Text>
+              </View>
+              <View style={s.statRow}>
+                <Text style={s.statLabel}>Recent best PTE</Text>
+                <Text style={s.statValue}>{bestPte != null ? bestPte.toFixed(1) : "None yet"}</Text>
+              </View>
             </View>
           </Card>
         </Section>
@@ -97,7 +138,9 @@ export default function Home() {
           <Card>
             <View style={s.rowBetween}>
               <Eyebrow color={C.dim}>NOTIFICATIONS</Eyebrow>
-              <Pressable onPress={() => router.push("/notifications" as never)} hitSlop={12}><Text style={s.link}>See all</Text></Pressable>
+              <Pressable onPress={() => router.push("/notifications" as never)} hitSlop={12}>
+                <Text style={s.link}>See all</Text>
+              </Pressable>
             </View>
             <Text style={s.body}>No notifications yet. Session recaps and progression updates will appear here.</Text>
           </Card>
@@ -110,7 +153,10 @@ export default function Home() {
               <Btn label="Open Feed" variant="ghost" onPress={() => router.push("/feed" as never)} />
               <Btn label="Open PTE.Flow" variant="ghost" onPress={() => router.push("/pte" as never)} />
               <Btn label="Session History" variant="ghost" onPress={() => router.push("/history" as never)} />
-              <Btn label={hasActiveSession ? "Continue Session" : "Start Session"} onPress={() => router.push("/flow" as never)} />
+              <Btn
+                label={hasActiveSession ? "Continue Session" : "Start Session"}
+                onPress={() => router.push("/flow" as never)}
+              />
             </View>
           </Card>
         </Section>
