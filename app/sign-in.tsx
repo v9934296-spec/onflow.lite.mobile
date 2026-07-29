@@ -35,14 +35,12 @@ export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ reason?: string | string[] }>();
   const reason = queryParam(params.reason);
-  const { completeSignIn, authError, dismissAuthError } = useAuth();
+  const { completeSignIn } = useAuth();
 
   const [email, setEmail] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
-  const visibleError = error ?? authError;
 
   useEffect(() => {
     if (!IS_IOS) return;
@@ -62,7 +60,6 @@ export default function SignInScreen() {
 
   const handleApple = useCallback(async () => {
     if (busy) return;
-    dismissAuthError();
     if (!isExpoApiUrlConfigured()) {
       setError(missingApiBaseUserMessage());
       return;
@@ -92,11 +89,10 @@ export default function SignInScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, dismissAuthError, finishSignIn]);
+  }, [busy, finishSignIn]);
 
   const handleEmail = useCallback(async () => {
     if (busy) return;
-    dismissAuthError();
     if (!isExpoApiUrlConfigured()) {
       setError(missingApiBaseUserMessage());
       return;
@@ -108,7 +104,7 @@ export default function SignInScreen() {
     setError(null);
     setBusy(true);
     try {
-      const result = await createEmailSession(email, inviteCode || undefined);
+      const result = await createEmailSession(email);
       if (!result.ok) {
         throw new Error(result.error.message);
       }
@@ -118,7 +114,7 @@ export default function SignInScreen() {
     } finally {
       setBusy(false);
     }
-  }, [busy, dismissAuthError, email, inviteCode, finishSignIn]);
+  }, [busy, email, finishSignIn]);
 
   const showAndroidNotice = !IS_IOS && !ENABLE_EMAIL_AUTH;
 
@@ -145,7 +141,7 @@ export default function SignInScreen() {
           ) : null}
         </View>
 
-        {visibleError ? <Text style={s.error}>{visibleError}</Text> : null}
+        {error ? <Text style={s.error}>{error}</Text> : null}
 
         {appleAvailable ? (
           <View pointerEvents={busy ? "none" : "auto"} style={{ opacity: busy ? 0.45 : 1 }}>
@@ -171,14 +167,6 @@ export default function SignInScreen() {
               keyboardType="email-address"
               autoComplete="email"
               placeholder="you@example.com"
-              editable={!busy}
-            />
-            <Field
-              label="Invite code (optional)"
-              value={inviteCode}
-              onChangeText={setInviteCode}
-              autoCapitalize="characters"
-              placeholder="grind-01"
               editable={!busy}
             />
             <Btn label="Continue with email" onPress={() => void handleEmail()} disabled={busy} />
