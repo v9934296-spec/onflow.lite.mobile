@@ -1,292 +1,144 @@
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, Text, View } from "react-native";
+import React, { useMemo } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-import { track } from "../src/analytics";
+import { AppNav } from "../src/components/AppNav";
 import { useAccount } from "../src/auth/accountContext";
-import { useAuth } from "../src/auth/authContext";
-import { getBestTrickStreak, getLast7Days } from "../src/progress";
-import { useSession } from "../src/session";
-import { useSessionAttempts } from "../src/sessionAttempts/useSessionAttempts";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
+import { useSession } from "../src/session";
+import { getBestTrickStreak } from "../src/progress";
 import { C, F } from "../src/theme";
-import { Btn, Card, Eyebrow, WeekRow } from "../src/ui";
+import { Btn, Card, Eyebrow } from "../src/ui";
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return "None yet";
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "None yet" : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={s.section}>
+      <Text style={s.sectionTitle}>{title}</Text>
+      {children}
+    </View>
+  );
+}
 
 export default function Home() {
   const router = useRouter();
-  const { log, attempts, resetLoop, selectedTrick, pendingClipJobId } = useSession();
-  const { user } = useAccount();
-  const { signOut } = useAuth();
-  const {
-    activeSession,
-    hasActiveSession,
-    hydrateState,
-    hydrateError,
-    isCreating,
-    createError,
-    startSession,
-    refreshActiveSession,
-    endSession,
-    isEnding,
-    endError,
-    dismissEndError,
-  } = useSkateSession();
-  const {
-    counts: sessionCounts,
-    isSubmitting: loggingAttempt,
-    submitError: attemptError,
-    logAttempt,
-    dismissSubmitError,
-  } = useSessionAttempts(activeSession?.id ?? null);
   const insets = useSafeAreaInsets();
-  const [entering, setEntering] = useState(false);
-  const week = getLast7Days(attempts);
-  const bestStreak = getBestTrickStreak(attempts);
+  const { user } = useAccount();
+  const { activeSession, hasActiveSession } = useSkateSession();
+  const { attempts, log, selectedTrick } = useSession();
 
-  const analysisPending = Boolean(pendingClipJobId);
-  const sessionBusy = isCreating || entering || loggingAttempt || isEnding;
-  const sessionActionDisabled = sessionBusy || analysisPending;
-  const sessionLoading = hydrateState === "loading";
-
-  useEffect(() => {
-    track("home_viewed");
-  }, []);
-
-  async function enterSession(createIfNeeded: boolean) {
-    if (analysisPending) {
-      router.push("/analyzing");
-      return;
-    }
-    if (sessionBusy || sessionLoading) return;
-    setEntering(true);
-    try {
-      if (createIfNeeded) {
-        const ok = await startSession();
-        if (!ok) return;
-      } else if (!hasActiveSession) {
-        return;
-      }
-      resetLoop();
-      router.push("/trick");
-    } finally {
-      setEntering(false);
-    }
-  }
-
-  async function handleEndSession() {
-    if (sessionActionDisabled || !hasActiveSession) return;
-
-    const finish = async () => {
-      const result = await endSession();
-      if (!result.ok) return;
-      track("session_ended", {
-        session_id: result.recap.session_id,
-        attempts: result.recap.attempts_count,
-        landed: result.recap.landed_count,
-      });
-      resetLoop();
-      router.replace(`/recap?sessionId=${encodeURIComponent(result.recap.session_id)}`);
-    };
-
-    if (sessionCounts.total === 0) {
-      Alert.alert(
-        "End empty session?",
-        "You haven't logged any attempts. End anyway?",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "End session", style: "destructive", onPress: () => void finish() },
-        ],
-      );
-      return;
-    }
-
-    await finish();
-  }
-
-  async function handleSignOut() {
-    try {
-      await signOut();
-    } catch (error) {
-      Alert.alert(
-        "Couldn't sign out securely",
-        error instanceof Error
-          ? error.message
-          : "The secure credential could not be removed. Restart the app and try again.",
-      );
-    }
-  }
+  const streak = useMemo(() => getBestTrickStreak(attempts), [attempts]);
+  const latestAnalysis = useMemo(() => [...log].reverse().find((entry) => entry.analysis.source === "user"), [log]);
+  const bestPte = useMemo(() => {
+    const ratings = log.map((entry) => entry.analysis.rating).filter((v): v is number => typeof v === "number");
+    return ratings.length ? Math.max(...ratings) : null;
+  }, [log]);
+  const isBattle = activeSession?.notes?.startsWith("[battle]") ?? false;
+  const handle = user?.email?.split("@")[0]?.trim();
+  const objective = latestAnalysis?.analysis.workOn?.trim() || "Complete a filmed attempt to unlock your next coaching objective.";
+  const focusName = selectedTrick?.canonicalName ?? activeSession?.focus_trick ?? null;
 
   return (
-    <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
-      <View style={s.hero}>
-        <Eyebrow>
-          <Text style={{ color: C.red }}>■ </Text>ONFLOW / LITE BUILD
-        </Eyebrow>
-        <Text style={s.h1}>
-          Film it.{"\n"}
-          <Text style={{ color: C.red }}>Get it straight.</Text>
-        </Text>
-        <Text style={s.sub}>
-          One clip in, honest feedback out. No fake numbers — if we can't see it, we say so.
-        </Text>
-        {user ? (
-          <Text style={s.signedInAs}>
-            Signed in as{" "}
-            <Text style={{ color: C.offwhite, fontFamily: F.bold }}>
-              {user.email || user.user_id}
-            </Text>
-          </Text>
+    <View style={[s.screen, { paddingTop: insets.top, paddingBottom: insets.bottom }]}> 
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+        <View style={s.header}>
+          <Text style={s.h1}>OnFlow</Text>
+          <Text style={s.subtitle}>Command Center</Text>
+          {handle ? <Text style={s.signedIn}>Signed in as {handle}</Text> : null}
+        </View>
+
+        {!attempts.length && !log.length && !hasActiveSession ? (
+          <Card accent={C.volt}>
+            <Eyebrow color={C.dim}>WELCOME</Eyebrow>
+            <Text style={s.cardHeading}>Welcome to OnFlow</Text>
+            <Text style={s.body}>Film skate clips, get honest coaching, and track progression over time. Start with your first session.</Text>
+            <View style={s.cardAction}><Btn label="Start Session" onPress={() => router.push("/flow" as never)} /></View>
+          </Card>
         ) : null}
-      </View>
 
-      {analysisPending ? (
-        <Card accent={C.amber}>
-          <Eyebrow color={C.amber}>ANALYSIS IN PROGRESS</Eyebrow>
-          <Text style={s.sessionMeta}>
-            Your job was saved on this device. You can safely resume checking its status.
-          </Text>
-          <Btn label="Resume analysis" onPress={() => router.push("/analyzing")} />
-        </Card>
-      ) : null}
-
-      {hasActiveSession && activeSession ? (
-        <Card accent={C.volt}>
-          <Eyebrow color={C.volt}>ACTIVE SESSION</Eyebrow>
-          {activeSession.spot_label ? <Text style={s.sessionMeta}>{activeSession.spot_label}</Text> : null}
-          {activeSession.focus_trick ? (
-            <Text style={s.sessionMeta}>Focus: {activeSession.focus_trick}</Text>
-          ) : null}
-          {selectedTrick ? <Text style={s.sessionTrick}>{selectedTrick.canonicalName}</Text> : null}
-          {sessionCounts.total > 0 ? (
-            <Text style={s.sessionMeta}>
-              {sessionCounts.landed} landed · {sessionCounts.missed} missed · {sessionCounts.total} logged
-            </Text>
-          ) : (
-            <Text style={s.sessionMeta}>No attempts logged yet</Text>
-          )}
-        </Card>
-      ) : null}
-
-      {attempts.length > 0 && (
-        <Card>
-          <Eyebrow color={C.volt}>LAST 7 DAYS</Eyebrow>
-          <WeekRow days={week} />
-          {bestStreak ? (
-            <Text style={s.streak}>
-              {bestStreak.trick} streak:{" "}
-              <Text style={{ color: C.volt, fontFamily: F.bold }}>
-                {bestStreak.streak} day{bestStreak.streak === 1 ? "" : "s"}
-              </Text>
-            </Text>
-          ) : null}
-        </Card>
-      )}
-
-      {hydrateError ? (
-        <View style={{ gap: 8 }}>
-          <Text style={s.error}>{hydrateError}</Text>
-          <Btn
-            label="Retry"
-            variant="ghost"
-            onPress={() => void refreshActiveSession()}
-            disabled={sessionBusy || sessionLoading}
-          />
-        </View>
-      ) : null}
-      {createError ? <Text style={s.error}>{createError}</Text> : null}
-      {attemptError ? (
-        <View style={{ gap: 8 }}>
-          <Text style={s.error}>{attemptError}</Text>
-          <Btn label="Dismiss" variant="ghost" onPress={dismissSubmitError} />
-        </View>
-      ) : null}
-      {endError ? (
-        <View style={{ gap: 8 }}>
-          <Text style={s.error}>{endError}</Text>
-          <Btn label="Dismiss" variant="ghost" onPress={dismissEndError} />
-        </View>
-      ) : null}
-
-      <View style={{ gap: 10 }}>
-        {sessionLoading ? (
-          <View style={s.loadingRow}>
-            <ActivityIndicator color={C.volt} />
-            <Text style={s.loadingText}>Checking for active session…</Text>
-          </View>
-        ) : hasActiveSession ? (
-          <>
-            <Btn
-              label={sessionBusy ? "Opening session…" : selectedTrick ? "Change trick" : "Continue session"}
-              onPress={() => void (selectedTrick ? router.push("/trick") : enterSession(false))}
-              disabled={sessionActionDisabled}
-            />
-            {selectedTrick ? (
+        <Section title="YOUR FOCUS">
+          <Card accent={isBattle ? C.red : C.volt}>
+            <Eyebrow color={C.dim}>CURRENT BATTLE</Eyebrow>
+            {focusName ? (
               <>
-                <Text style={s.selectedHint}>Current trick: {selectedTrick.canonicalName}</Text>
-                <Btn
-                  label="Film clip"
-                  onPress={() => router.push("/capture")}
-                  disabled={sessionActionDisabled}
-                />
-                <View style={s.outcomeRow}>
-                  <Btn
-                    label={loggingAttempt ? "Saving…" : "Land"}
-                    onPress={() => void logAttempt(selectedTrick, "landed")}
-                    disabled={sessionActionDisabled}
-                  />
-                  <Btn
-                    label={loggingAttempt ? "Saving…" : "Miss"}
-                    variant="ghost"
-                    onPress={() => void logAttempt(selectedTrick, "missed")}
-                    disabled={sessionActionDisabled}
-                  />
-                </View>
+                <Text style={s.cardHeading}>{focusName}</Text>
+                <Text style={s.body}>{isBattle ? "Battle active" : "Current focus"} · {attempts.length} logged entries</Text>
+                {streak ? <Text style={s.momentum}>{streak.streak} day momentum</Text> : null}
               </>
-            ) : null}
-            <Btn
-              label={isEnding ? "Ending session…" : "End session"}
-              variant="red"
-              onPress={() => void handleEndSession()}
-              disabled={sessionActionDisabled}
-            />
-          </>
-        ) : (
-          <Btn
-            label={sessionBusy ? "Starting session…" : "Start session"}
-            onPress={() => void enterSession(true)}
-            disabled={sessionActionDisabled}
-          />
-        )}
-        <Btn label="Session history" variant="ghost" onPress={() => router.push("/history")} />
-        <Btn label="Feed" variant="ghost" onPress={() => router.push("/feed")} />
-        <Btn label="Settings" variant="ghost" onPress={() => router.push("/settings")} />
-        <Btn
-          label={`Session log${log.length > 0 ? ` · ${log.length}` : ""}`}
-          variant="ghost"
-          onPress={() => {
-            track("log_viewed");
-            router.push("/log");
-          }}
-        />
-        <Btn label="Sign out" variant="ghost" onPress={() => void handleSignOut()} />
-      </View>
+            ) : (
+              <Text style={s.body}>Pick a trick and start skating to see your focus here.</Text>
+            )}
+          </Card>
+
+          <Card accent={C.red}>
+            <Eyebrow color={C.dim}>CURRENT OBJECTIVE</Eyebrow>
+            <Text style={s.objective}>{objective}</Text>
+          </Card>
+        </Section>
+
+        <Section title="AT A GLANCE">
+          <Card>
+            <Eyebrow color={C.dim}>QUICK PROGRESS SUMMARY</Eyebrow>
+            <View style={s.statsList}>
+              <View style={s.statRow}><Text style={s.statLabel}>Sessions logged</Text><Text style={s.statValue}>{log.length || "None yet"}</Text></View>
+              <View style={s.statRow}><Text style={s.statLabel}>Active battles</Text><Text style={s.statValue}>{hasActiveSession && isBattle ? "1" : "0"}</Text></View>
+              <View style={s.statRow}><Text style={s.statLabel}>Last activity</Text><Text style={s.statValue}>{formatDate(log.at(-1)?.loggedAt)}</Text></View>
+              <View style={s.statRow}><Text style={s.statLabel}>Recent best PTE</Text><Text style={s.statValue}>{bestPte != null ? bestPte.toFixed(1) : "None yet"}</Text></View>
+            </View>
+          </Card>
+        </Section>
+
+        <Section title="UPDATES">
+          <Card>
+            <View style={s.rowBetween}>
+              <Eyebrow color={C.dim}>NOTIFICATIONS</Eyebrow>
+              <Pressable onPress={() => router.push("/notifications" as never)} hitSlop={12}><Text style={s.link}>See all</Text></Pressable>
+            </View>
+            <Text style={s.body}>No notifications yet. Session recaps and progression updates will appear here.</Text>
+          </Card>
+        </Section>
+
+        <Section title="GO DEEPER">
+          <Card>
+            <Eyebrow color={C.dim}>QUICK LINKS</Eyebrow>
+            <View style={s.quickLinks}>
+              <Btn label="Open Feed" variant="ghost" onPress={() => router.push("/feed" as never)} />
+              <Btn label="Open PTE.Flow" variant="ghost" onPress={() => router.push("/pte" as never)} />
+              <Btn label="Session History" variant="ghost" onPress={() => router.push("/history" as never)} />
+              <Btn label={hasActiveSession ? "Continue Session" : "Start Session"} onPress={() => router.push("/flow" as never)} />
+            </View>
+          </Card>
+        </Section>
+      </ScrollView>
+      <AppNav />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 16 },
-  hero: { flex: 1, justifyContent: "center", gap: 10 },
-  h1: { fontFamily: F.heading, fontSize: 40, lineHeight: 44, color: C.offwhite },
-  sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
-  signedInAs: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 4 },
-  streak: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 4 },
-  sessionMeta: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 2 },
-  sessionTrick: { fontFamily: F.bold, fontSize: 16, color: C.offwhite, marginTop: 4 },
-  selectedHint: { fontFamily: F.body, fontSize: 12, color: C.dim, textAlign: "center" },
-  outcomeRow: { flexDirection: "row", gap: 10 },
-  error: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.red, textAlign: "center" },
-  loadingRow: { flexDirection: "row", alignItems: "center", gap: 10, justifyContent: "center", paddingVertical: 12 },
-  loadingText: { fontFamily: F.body, fontSize: 13, color: C.dim },
+  screen: { flex: 1, backgroundColor: C.charcoal },
+  content: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 28, gap: 26 },
+  header: { paddingBottom: 4 },
+  h1: { fontFamily: F.heading, fontSize: 38, lineHeight: 42, color: C.offwhite },
+  subtitle: { fontFamily: F.body, fontSize: 14, color: C.dim, marginTop: 2 },
+  signedIn: { fontFamily: F.body, fontSize: 12, color: C.dim, marginTop: 8 },
+  section: { gap: 12 },
+  sectionTitle: { fontFamily: F.bold, fontSize: 12, letterSpacing: 0.7, color: C.dim },
+  cardHeading: { fontFamily: F.heading, fontSize: 22, lineHeight: 27, color: C.offwhite, marginTop: 6 },
+  body: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim, marginTop: 6 },
+  objective: { fontFamily: F.body, fontSize: 16, lineHeight: 23, color: C.offwhite, marginTop: 8 },
+  momentum: { fontFamily: F.bold, fontSize: 12, color: C.volt, marginTop: 5 },
+  cardAction: { marginTop: 14 },
+  statsList: { gap: 12, marginTop: 12 },
+  statRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 16 },
+  statLabel: { flex: 1, fontFamily: F.body, fontSize: 13, color: C.dim },
+  statValue: { fontFamily: F.bold, fontSize: 13, color: C.offwhite, textAlign: "right" },
+  rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  link: { fontFamily: F.bold, fontSize: 12, color: C.volt },
+  quickLinks: { gap: 10, marginTop: 12 },
 });
