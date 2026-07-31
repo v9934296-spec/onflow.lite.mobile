@@ -15,7 +15,8 @@ from app.repositories.identity import IdentityRepository
 
 # Process-local serialization for free-tier quota decisions. Prevents concurrent
 # complete-upload on the same API process from double-spending monthly free.
-# Multi-worker fleets still need a distributed lock / ledger for hard caps.
+# SHIP CONSTRAINT: run a single API replica until a Redis/Postgres advisory lock
+# or append-only quota ledger lands. Multi-worker fleets can over-serve free tier.
 _user_locks: dict[str, threading.Lock] = {}
 _user_locks_guard = threading.Lock()
 

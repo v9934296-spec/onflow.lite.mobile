@@ -22,6 +22,7 @@ import {
   type ProgressionTimelineItem,
 } from "../src/api/progressionApi";
 import { saveActiveSessionId } from "../src/activeSessionStore";
+import { useAccount } from "../src/auth/accountContext";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSessionAttempts } from "../src/sessionAttempts/useSessionAttempts";
 import { useSession } from "../src/session";
@@ -37,6 +38,7 @@ import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 export default function FlowScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user } = useAccount();
   const { selectedTrick, resetLoop } = useSession();
   const {
     activeSession,
@@ -96,12 +98,16 @@ export default function FlowScreen() {
 
     setStartingBattle(true);
     try {
+      if (!user?.user_id) {
+        Alert.alert("Could not start battle", "Sign in required.");
+        return;
+      }
       const result = await createSkateSession({ notes: "[battle] Single-trick battle session" });
       if (!result.ok) {
         Alert.alert("Could not start battle", result.error.message);
         return;
       }
-      await saveActiveSessionId(result.data.id);
+      await saveActiveSessionId(user.user_id, result.data.id);
       await refreshActiveSession();
       router.push("/trick?returnTo=/flow" as never);
     } finally {

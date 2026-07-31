@@ -198,7 +198,16 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     get_settings.cache_clear()
     settings = get_settings()
-    app = FastAPI(title="OnFlow API", lifespan=lifespan)
+    docs_url = None if settings.is_production else "/docs"
+    redoc_url = None if settings.is_production else "/redoc"
+    openapi_url = None if settings.is_production else "/openapi.json"
+    app = FastAPI(
+        title="OnFlow API",
+        lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+    )
 
     if os.environ.get("PYTEST_CURRENT_TEST"):
         @app.middleware("http")
@@ -249,12 +258,14 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def root() -> dict[str, str]:
-        return {
+        payload = {
             "name": "OnFlow API",
             "status": "running",
             "health": "/health",
-            "docs": "/docs",
         }
+        if not settings.is_production:
+            payload["docs"] = "/docs"
+        return payload
 
     app.include_router(health.router)
     app.include_router(account.router)

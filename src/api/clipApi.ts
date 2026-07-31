@@ -30,6 +30,8 @@ export interface UploadClipParams {
   heightPx: number;
   sizeBytes: number;
   clientHintTrickId?: string | null;
+  onInitiated?: (initiated: InitiateClipUploadResponse) => void | Promise<void>;
+  onProgress?: (fraction: number) => void;
 }
 
 function parseInitiateResponse(raw: unknown): InitiateClipUploadResponse | null {
@@ -184,15 +186,22 @@ export async function uploadClipToSession(params: UploadClipParams): Promise<Api
   });
   if (!initiated.ok) return initiated;
 
+  if (params.onInitiated) {
+    await params.onInitiated(initiated.data);
+  }
+  params.onProgress?.(0.05);
+
   const uploaded = await uploadClipToPresignedUrl(
     initiated.data.upload_url,
     params.fileUri,
     params.mimeType,
   );
   if (!uploaded.ok) return uploaded;
+  params.onProgress?.(0.9);
 
   const completed = await completeSessionClipUpload(initiated.data.clip_id);
   if (!completed.ok) return completed;
+  params.onProgress?.(1);
 
   return { ok: true, data: initiated.data.clip_id, status: completed.status };
 }

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # Comma-separated Google OAuth client IDs (web + iOS) for ID token verification.
     google_client_ids: str = ""
     # Apple Sign In bundle id (aud claim); Railway: ONFLOW_APPLE_BUNDLE_ID
-    apple_bundle_id: str = "skate.onflow.mobile"
+    apple_bundle_id: str = "com.onflow.lite"
 
     # Comma-separated operator emails auto-promoted to users.is_admin on sign-in.
     # Required in production/staging; admin routes check users.is_admin (see app/deps/admin.py).
@@ -91,6 +91,9 @@ class Settings(BaseSettings):
 
     # RevenueCat store product IDs (webhook + docs)
     rc_product_reup_pack: str = "onflow_reup_pack_399"
+    # Comma-separated Store product IDs that grant Pro (lifetime / yearly / monthly).
+    # Unknown products are acknowledged but do not change tier.
+    rc_pro_product_ids: str = ""
     # Comma-separated legacy one-time pack IDs that grant +3 bonus (no Pro tier); preserves old credits via webhook.
     rc_legacy_bonus_product_ids: str = ""
 
@@ -182,6 +185,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "ONFLOW_TWELVELABS_API_KEY must be set when ONFLOW_ENV is "
                     "production, prod, or staging."
+                )
+            if not (self.gemini_api_key or "").strip():
+                raise ValueError(
+                    "ONFLOW_GEMINI_API_KEY must be set when ONFLOW_ENV is "
+                    "production, prod, or staging (free-tier analysis)."
                 )
             if not self.s3_configured:
                 raise ValueError(

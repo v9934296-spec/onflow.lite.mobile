@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
@@ -110,14 +111,60 @@ def test_expiration_downgrades_pro_to_free(client: TestClient) -> None:
     assert client.app.state.db.get_user_tier(user_id) == "free"
 
 
-def test_initial_purchase_still_grants_pro(client: TestClient) -> None:
-    """Regression guard: the upgrade path is unchanged by the downgrade fix."""
+def test_initial_purchase_still_grants_pro(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression guard: allowlisted products still grant Pro."""
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ONFLOW_RC_PRO_PRODUCT_IDS", "onflow_pro_monthly,onflow_pro_annual")
+    get_settings.cache_clear()
     user_id = _create_user(client, "purchase-grants-pro@onflow.test")
 
     body = _webhook(client, "INITIAL_PURCHASE", user_id, "onflow_pro_monthly")
 
     assert body["action"] == "tier_set_pro"
     assert client.app.state.db.get_user_tier(user_id) == "pro"
+
+
+def test_unknown_product_does_not_grant_pro(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ONFLOW_RC_PRO_PRODUCT_IDS", "onflow_pro_monthly")
+    get_settings.cache_clear()
+    user_id = _create_user(client, "unknown-product@onflow.test")
+
+    body = _webhook(client, "INITIAL_PURCHASE", user_id, "com.random.sku")
+
+    assert body["action"] == "ignored_unknown_product"
+    assert client.app.state.db.get_user_tier(user_id) in {"free", "trial"}
+
+
+def test_empty_event_id_does_not_mutate(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ONFLOW_RC_PRO_PRODUCT_IDS", "onflow_pro_monthly")
+    get_settings.cache_clear()
+    user_id = _create_user(client, "empty-event-id@onflow.test")
+
+    r = client.post(
+        "/api/v1/webhooks/revenuecat",
+        json={
+            "event": {
+                "type": "INITIAL_PURCHASE",
+                "app_user_id": user_id,
+                "product_id": "onflow_pro_monthly",
+                "id": "",
+            }
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["action"] == "ignored_missing_event_id"
+    assert client.app.state.db.get_user_tier(user_id) in {"free", "trial"}
 
 
 # ---------------------------------------------------------------------------

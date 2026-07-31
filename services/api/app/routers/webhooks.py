@@ -92,8 +92,31 @@ def _reup_product_ids(settings) -> set[str]:
     return out
 
 
-def _tier_for_subscription_product(product_id: str, settings) -> str:
-    return "pro"
+def _pro_product_ids(settings) -> set[str]:
+    out: set[str] = set()
+    for x in (settings.rc_pro_product_ids or "").split(","):
+        t = x.strip()
+        if t:
+            out.add(t)
+    return out
+
+
+def _tier_for_subscription_product(product_id: str, settings) -> str | None:
+    """Return 'pro' only for allowlisted Store product IDs; otherwise None (no tier change)."""
+    pid = (product_id or "").strip()
+    if not pid:
+        return None
+    allowed = _pro_product_ids(settings)
+    if not allowed:
+        logger.warning(
+            "ONFLOW_RC_PRO_PRODUCT_IDS is empty — ignoring subscription product_id=%s",
+            pid,
+        )
+        return None
+    if pid in allowed:
+        return "pro"
+    logger.info("ignoring non-allowlisted product_id=%s for tier grant", pid)
+    return None
 
 
 @router.post("/revenuecat")
@@ -128,6 +151,13 @@ async def revenuecat_webhook(request: Request) -> dict:
 
     if not event_type or not rc_app_user_id:
         return {"ok": True, "action": "ignored_missing_fields"}
+
+    if not event_id:
+        logger.warning(
+            "RevenueCat webhook missing event.id — acknowledging without mutate type=%s",
+            event_type,
+        )
+        return {"ok": True, "action": "ignored_missing_event_id"}
 
     if event_type == "INITIAL_PURCHASE":
         logger.info(
@@ -171,6 +201,12 @@ async def revenuecat_webhook(request: Request) -> dict:
     new_tier: str | None = None
     if event_type in _PRO_EVENTS:
         new_tier = _tier_for_subscription_product(product_id, settings)
+        if new_tier is None:
+            return {
+                "ok": True,
+                "action": "ignored_unknown_product",
+                "product_id": product_id,
+            }
     elif event_type in _FREE_EVENTS:
         new_tier = "free"
 

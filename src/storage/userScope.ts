@@ -23,6 +23,7 @@ export const SCOPED_BASE_KEYS = [
   "onflow_lite_log_v1",
   "onflow_lite_progress_v1",
   "onflow.sessionAttempts.v1",
+  "onflow.sessionAttemptOutbox.v1",
   "onflow.completedSessions.v1",
   "onflow.activeSession.v2",
   "onflow.lastRecapSession.v2",

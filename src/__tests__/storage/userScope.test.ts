@@ -76,36 +76,26 @@ describe("userScope", () => {
   });
 
   it("isolates one account's log from another on the same device", async () => {
-    setStorageUserId("user-a");
-    await saveLog([makeEntry("a1")]);
+    await saveLog("user-a", [makeEntry("a1")]);
+    expect((await loadLog("user-b")).data).toEqual([]);
+    await saveLog("user-b", [makeEntry("b1")]);
 
-    setStorageUserId("user-b");
-    expect((await loadLog()).data).toEqual([]);
-    await saveLog([makeEntry("b1")]);
-
-    setStorageUserId("user-a");
-    const aData = (await loadLog()).data;
+    const aData = (await loadLog("user-a")).data;
     expect(aData).toHaveLength(1);
     expect(aData[0]?.id).toBe("a1");
 
-    setStorageUserId("user-b");
-    const bData = (await loadLog()).data;
+    const bData = (await loadLog("user-b")).data;
     expect(bData).toHaveLength(1);
     expect(bData[0]?.id).toBe("b1");
   });
 
   it("clearing one account's log does not touch another's", async () => {
-    setStorageUserId("user-a");
-    await saveLog([makeEntry("a1")]);
-    setStorageUserId("user-b");
-    await saveLog([makeEntry("b1")]);
+    await saveLog("user-a", [makeEntry("a1")]);
+    await saveLog("user-b", [makeEntry("b1")]);
 
-    setStorageUserId("user-a");
-    await clearLog();
-    expect((await loadLog()).data).toEqual([]);
-
-    setStorageUserId("user-b");
-    expect((await loadLog()).data).toHaveLength(1);
+    await clearLog("user-a");
+    expect((await loadLog("user-a")).data).toEqual([]);
+    expect((await loadLog("user-b")).data).toHaveLength(1);
   });
 
   it("migrates legacy unscoped data into the first authenticated user once", async () => {
@@ -114,9 +104,7 @@ describe("userScope", () => {
     await activateStorageForUser("user-a");
 
     expect(store.has("onflow_lite_log_v1")).toBe(false);
-    const aData = (await loadLog()).data;
-    expect(aData).toHaveLength(1);
-    expect(aData[0]?.id).toBe("legacy");
+    expect(store.get("u:user-a:onflow_lite_log_v1")).toContain("legacy");
   });
 
   it("does not give a later account the migrated legacy data", async () => {
@@ -125,10 +113,7 @@ describe("userScope", () => {
     await activateStorageForUser("user-a");
     await activateStorageForUser("user-b");
 
-    setStorageUserId("user-b");
-    expect((await loadLog()).data).toEqual([]);
-
-    setStorageUserId("user-a");
-    expect((await loadLog()).data).toHaveLength(1);
+    expect(store.get("u:user-a:onflow_lite_log_v1")).toContain("legacy");
+    expect(store.has("u:user-b:onflow_lite_log_v1")).toBe(false);
   });
 });

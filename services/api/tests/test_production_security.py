@@ -17,6 +17,7 @@ def _prod_db_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Satisfies production/staging Redis requirement for slowapi (connectivity check skipped in pytest).
     monkeypatch.setenv("ONFLOW_REDIS_URL", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key-not-used-in-requests")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key-not-used-in-requests")
     monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
     monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
@@ -35,6 +36,7 @@ def _prod_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
     monkeypatch.delenv("ONFLOW_TWELVELABS_API_KEY", raising=False)
+    monkeypatch.delenv("ONFLOW_GEMINI_API_KEY", raising=False)
     from app.core.config import get_settings
 
     get_settings.cache_clear()
@@ -44,6 +46,7 @@ def test_production_requires_redis_url_at_settings(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("ONFLOW_ENV", "production")
     _prod_settings_env(monkeypatch)
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.delenv("ONFLOW_REDIS_URL", raising=False)
     from app.core.config import Settings
 
@@ -149,6 +152,7 @@ def test_production_issue_onflow_access_token_never_dev_prefix(
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "unit-test-jwt-secret-32-bytes-minimum")
     monkeypatch.setenv("ONFLOW_REDIS_URL", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
     monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
@@ -172,6 +176,7 @@ def test_production_claim_invite_removed(
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "unit-test-jwt-secret-32-bytes-minimum")
     monkeypatch.setenv("ONFLOW_REDIS_URL", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
     monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
@@ -210,6 +215,7 @@ def test_staging_requires_admin_emails_at_settings(
     monkeypatch.setenv("ONFLOW_ENV", "staging")
     _prod_settings_env(monkeypatch)
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.delenv("ONFLOW_ADMIN_EMAILS", raising=False)
     from app.core.config import Settings
 
@@ -224,6 +230,7 @@ def test_production_requires_admin_emails_at_settings(
     monkeypatch.setenv("ONFLOW_ENV", "production")
     _prod_settings_env(monkeypatch)
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.delenv("ONFLOW_ADMIN_EMAILS", raising=False)
     from app.core.config import Settings
 
@@ -268,10 +275,26 @@ def test_production_requires_twelvelabs_api_key_at_settings(
     assert "ONFLOW_TWELVELABS_API_KEY" in str(exc.value)
 
 
+def test_production_requires_gemini_api_key_at_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONFLOW_ENV", "production")
+    _prod_settings_env(monkeypatch)
+    monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.delenv("ONFLOW_GEMINI_API_KEY", raising=False)
+    from app.core.config import Settings, get_settings
+
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError) as exc:
+        Settings()
+    assert "ONFLOW_GEMINI_API_KEY" in str(exc.value)
+
+
 def test_staging_requires_s3_at_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONFLOW_ENV", "staging")
     _prod_settings_env(monkeypatch)
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.delenv("ONFLOW_S3_BUCKET", raising=False)
     from app.core.config import Settings, get_settings
 
@@ -315,6 +338,7 @@ def test_twelvelabs_key_never_in_validation_error_or_logs(
     monkeypatch.setenv("ONFLOW_DATABASE_URL", "postgresql://user:pass@localhost/onflow")
     monkeypatch.setenv("ONFLOW_REDIS_URL", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", secret)
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
     monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
