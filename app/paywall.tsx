@@ -1,65 +1,178 @@
-import React, { useEffect } from "react";
-import { Linking, StyleSheet, Text, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Linking, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { track } from "../src/analytics";
 import { useAccount } from "../src/auth/accountContext";
-import { isProTier } from "../src/billing/quota";
+import {
+  isProTier,
+  isNativeStorePlatform,
+  purchasesErrorMessage,
+  usePurchases,
+  RC_ENTITLEMENT_PRO,
+  RC_PACKAGE_IDS,
+} from "../src/billing";
 import { PRIVACY_URL, TERMS_URL } from "../src/legal/urls";
 import { C, F } from "../src/theme";
 import { Btn, Card, Eyebrow } from "../src/ui";
 
 /**
- * Free-tier limit screen. OnFlow Lite does not ship in-app purchases yet —
- * copy must not imply a working store checkout path.
+ * Pro upgrade surface: presents the RevenueCat Paywall (dashboard-configured)
+ * for lifetime / yearly / monthly packages attached to entitlement `onflow-lite Pro`.
  */
 export default function PaywallScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAccount();
-  const isPro = isProTier(user?.tier);
+  const { user, refreshUser } = useAccount();
+  const {
+    ready,
+    isProEntitled,
+    packages,
+    showPaywall,
+    showCustomerCenter,
+    restore,
+    refresh,
+  } = usePurchases();
+  const [busy, setBusy] = useState<"paywall" | "restore" | "manage" | null>(null);
+  const autoPresented = useRef(false);
+
+  const isPro = isProEntitled || isProTier(user?.tier);
 
   useEffect(() => {
     track("paywall_viewed", { tier: user?.tier ?? "unknown" });
   }, [user?.tier]);
 
+  const runPaywall = useCallback(async () => {
+    if (busy) return;
+    setBusy("paywall");
+    try {
+      const result = await showPaywall();
+      await refreshUser();
+      if (result.status === "purchased" || result.status === "restored") {
+        Alert.alert(
+          "Welcome to Pro",
+          "Purchase recorded. Your store entitlement is active. "
+            + "If analysis still shows a free-tier limit for a moment, wait for billing sync — usually under a minute.",
+        );
+        return;
+      }
+      if (result.status === "error" || result.status === "unsupported") {
+        Alert.alert("Paywall unavailable", result.message ?? "Could not open the paywall.");
+      }
+    } catch (error) {
+      Alert.alert("Paywall error", purchasesErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, refreshUser, showPaywall]);
+
+  // Auto-present RC paywall once when the user lacks Pro (native only).
+  useEffect(() => {
+    if (!ready || isPro || autoPresented.current || !isNativeStorePlatform()) return;
+    autoPresented.current = true;
+    void runPaywall();
+  }, [ready, isPro, runPaywall]);
+
+  const onRestore = useCallback(async () => {
+    if (busy) return;
+    setBusy("restore");
+    try {
+      const info = await restore();
+      await refreshUser();
+      if (!info) {
+        Alert.alert("Restore failed", "Could not restore purchases. Try again or contact support.");
+        return;
+      }
+      const entitled =
+        typeof info.entitlements.active[RC_ENTITLEMENT_PRO] !== "undefined";
+      Alert.alert(
+        entitled ? "Purchases restored" : "No Pro found",
+        entitled
+          ? "Your onflow-lite Pro access has been restored."
+          : "We could not find an active Pro purchase for this Apple/Google account.",
+      );
+    } catch (error) {
+      Alert.alert("Restore failed", purchasesErrorMessage(error, "Restore failed."));
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, refreshUser, restore]);
+
+  const onManage = useCallback(async () => {
+    if (busy) return;
+    setBusy("manage");
+    try {
+      const result = await showCustomerCenter();
+      await refresh();
+      await refreshUser();
+      if (!result.ok) {
+        Alert.alert("Customer Center", result.message ?? "Could not open subscription management.");
+      }
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, refresh, refreshUser, showCustomerCenter]);
+
+  const packageSummary = [
+    packages.lifetime ? `Lifetime (${RC_PACKAGE_IDS.lifetime})` : null,
+    packages.yearly ? `Yearly (${RC_PACKAGE_IDS.yearly})` : null,
+    packages.monthly ? `Monthly (${RC_PACKAGE_IDS.monthly})` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
       <View style={{ gap: 6 }}>
-        <Eyebrow>ANALYSIS LIMIT</Eyebrow>
-        <Text style={s.title}>
-          {isPro ? "You're on Pro" : "You've used this month's free analyses"}
-        </Text>
+        <Eyebrow>ONFLOW LITE PRO</Eyebrow>
+        <Text style={s.title}>{isPro ? "You're on Pro" : "Unlock unlimited analysis"}</Text>
         <Text style={s.sub}>
           {isPro
-            ? "Unlimited clip analyses are active on your account."
-            : "OnFlow Lite includes a free monthly analysis allowance. In-app purchases are not available in this build."}
+            ? "Your onflow-lite Pro entitlement is active. Manage billing anytime in Customer Center."
+            : "Choose Lifetime, Yearly, or Monthly. Purchases sync through RevenueCat to your OnFlow account."}
         </Text>
       </View>
 
       <Card accent={C.volt}>
         <Eyebrow color={C.volt}>CURRENT PLAN</Eyebrow>
-        <Text style={s.plan}>{user?.tier ?? "free"}</Text>
+        <Text style={s.plan}>{isPro ? "Pro" : user?.tier ?? "free"}</Text>
         {user?.bonus_analyses_remaining != null && user.bonus_analyses_remaining > 0 ? (
           <Text style={s.meta}>Bonus analyses remaining: {user.bonus_analyses_remaining}</Text>
         ) : null}
+        {!ready ? (
+          <View style={s.loadingRow}>
+            <ActivityIndicator color={C.volt} />
+            <Text style={s.meta}>Connecting to store…</Text>
+          </View>
+        ) : packageSummary ? (
+          <Text style={s.meta}>Offering packages: {packageSummary}</Text>
+        ) : (
+          <Text style={s.meta}>
+            Configure packages `{RC_PACKAGE_IDS.lifetime}`, `{RC_PACKAGE_IDS.yearly}`, `
+            {RC_PACKAGE_IDS.monthly}` on your current Offering in RevenueCat.
+          </Text>
+        )}
       </Card>
 
-      {!isPro ? (
-        <Card>
-          <Eyebrow>WHAT YOU CAN DO</Eyebrow>
-          <Text style={s.bullet}>· Wait until next month for free analyses to reset</Text>
-          <Text style={s.bullet}>· Use any remaining bonus credits on your account</Text>
-          <Text style={s.bullet}>· Contact support if you need Pro access for testing</Text>
-        </Card>
-      ) : null}
-
-      <Text style={s.note}>
-        Pro subscriptions and Re-Up packs are managed server-side (RevenueCat webhooks). This
-        Lite build does not open the App Store purchase sheet.
-      </Text>
-
       <View style={{ gap: 10 }}>
+        {!isPro ? (
+          <>
+            <Btn
+              label={busy === "paywall" ? "Opening…" : "View Pro plans"}
+              onPress={() => void runPaywall()}
+            />
+            <Btn
+              label={busy === "restore" ? "Restoring…" : "Restore purchases"}
+              variant="ghost"
+              onPress={() => void onRestore()}
+            />
+          </>
+        ) : (
+          <Btn
+            label={busy === "manage" ? "Opening…" : "Manage subscription"}
+            onPress={() => void onManage()}
+          />
+        )}
         <Btn label="Terms of Service" variant="ghost" onPress={() => void Linking.openURL(TERMS_URL)} />
         <Btn label="Privacy Policy" variant="ghost" onPress={() => void Linking.openURL(PRIVACY_URL)} />
         <Btn label="Back" variant="ghost" onPress={() => router.back()} />
@@ -74,6 +187,5 @@ const s = StyleSheet.create({
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
   plan: { fontFamily: F.bold, fontSize: 18, color: C.volt, marginTop: 4, textTransform: "capitalize" },
   meta: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 4 },
-  bullet: { fontFamily: F.body, fontSize: 13, color: C.offwhite, marginTop: 4 },
-  note: { fontFamily: F.body, fontSize: 12, lineHeight: 18, color: C.dim },
+  loadingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
 });

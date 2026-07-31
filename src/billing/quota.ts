@@ -1,5 +1,7 @@
 /** Quota / upgrade detection for upload and analysis errors. */
 
+export { PAYWALL_ROUTE } from "./constants";
+
 export function isQuotaExceededMessage(message: string): boolean {
   const r = message.toLowerCase();
   return (
@@ -10,8 +12,6 @@ export function isQuotaExceededMessage(message: string): boolean {
     r.includes("high demand")
   );
 }
-
-export const PAYWALL_ROUTE = "/paywall" as const;
 
 export function isProTier(tier: string | null | undefined): boolean {
   if (!tier) return false;

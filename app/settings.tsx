@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+﻿import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Linking,
@@ -20,7 +20,7 @@ import {
 } from "../src/api/progressionApi";
 import { useAccount } from "../src/auth/accountContext";
 import { useAuth } from "../src/auth/authContext";
-import { isProTier, PAYWALL_ROUTE } from "../src/billing/quota";
+import { isProTier, PAYWALL_ROUTE, usePurchases } from "../src/billing";
 import { DELETE_ACCOUNT_INFO_URL, PRIVACY_URL, TERMS_URL } from "../src/legal/urls";
 import { C, F, RADIUS, SPACE } from "../src/theme";
 import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
@@ -52,9 +52,29 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useAccount();
   const { signOut } = useAuth();
+  const { isProEntitled, showCustomerCenter } = usePurchases();
   const [overview, setOverview] = useState<ProgressionOverview | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
-  const [busy, setBusy] = useState<"export" | "delete" | null>(null);
+  const [busy, setBusy] = useState<"export" | "delete" | "manage" | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const isPro = isProEntitled || isProTier(user?.tier);
+
+  const handleSignOut = useCallback(async () => {
+    if (signingOut || busy) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+    } catch (error) {
+      Alert.alert(
+        "Couldn't sign out securely",
+        error instanceof Error
+          ? error.message
+          : "The encrypted credential could not be removed. Restart the app and try again.",
+      );
+    } finally {
+      setSigningOut(false);
+    }
+  }, [busy, signOut, signingOut]);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,9 +191,28 @@ export default function SettingsScreen() {
           </Card>
         ) : null}
 
-        {!isProTier(user?.tier) ? (
+        {!isPro ? (
           <Btn label="Upgrade to Pro" onPress={() => router.push(PAYWALL_ROUTE)} />
-        ) : null}
+        ) : (
+          <Btn
+            label={busy === "manage" ? "Opening…" : "Manage subscription"}
+            variant="ghost"
+            onPress={() => {
+              if (busy) return;
+              setBusy("manage");
+              void showCustomerCenter()
+                .then((result) => {
+                  if (!result.ok) {
+                    Alert.alert(
+                      "Customer Center",
+                      result.message ?? "Could not open subscription management.",
+                    );
+                  }
+                })
+                .finally(() => setBusy(null));
+            }}
+          />
+        )}
 
         <View style={s.group}>
           <Row label="Feed" onPress={() => router.push("/feed" as never)} />
@@ -198,7 +237,12 @@ export default function SettingsScreen() {
         </View>
 
         <View style={{ gap: 10, marginTop: SPACE.md }}>
-          <Btn label="Sign out" variant="red" onPress={() => void signOut()} />
+          <Btn
+            label={signingOut ? "Signing out…" : "Sign out"}
+            variant="red"
+            onPress={() => void handleSignOut()}
+            disabled={signingOut || Boolean(busy)}
+          />
           <Btn label="Back to Home" variant="ghost" onPress={() => router.replace("/" as never)} />
         </View>
       </ScrollView>
