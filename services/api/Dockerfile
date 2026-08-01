@@ -23,7 +23,7 @@ COPY services/api/alembic.ini ./alembic.ini
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
-RUN python3.12 -c "import fastapi, sqlmodel, arq, structlog"
+RUN python3.12 -c "import fastapi, sqlmodel, arq, structlog, alembic, boto3, redis, pydantic_settings, slowapi, sentry_sdk"
 RUN mkdir -p /app/data/uploads && chown -R nonroot:nonroot /app
 USER nonroot
 EXPOSE 8080

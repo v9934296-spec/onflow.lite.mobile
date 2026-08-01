@@ -49,6 +49,78 @@ def test_try_claim_reclaims_stale_processing() -> None:
     assert reclaimed.attempt_number >= 2
 
 
+def test_update_claimed_rejects_stale_token() -> None:
+    from copy import deepcopy
+
+    repo = InMemoryClipJobRepository()
+    job = ClipJobRecord.new_pending("j-fence", "u1", "storage:k.mp4")
+    repo.create(job)
+    claimed = repo.try_claim_for_processing("j-fence")
+    assert claimed is not None
+    token = claimed.claim_token
+    assert token
+
+    payload = deepcopy(claimed)
+    payload.with_status("completed", result_json={"ok": True})
+    assert repo.update_claimed(payload, claim_token="wrong-token") is False
+    still = repo.get("j-fence")
+    assert still is not None
+    assert still.status == "processing"
+
+    assert repo.update_claimed(payload, claim_token=token) is True
+    done = repo.get("j-fence")
+    assert done is not None
+    assert done.status == "completed"
+
+
+def test_renew_lease_extends_ownership() -> None:
+    from datetime import timedelta
+
+    repo = InMemoryClipJobRepository()
+    job = ClipJobRecord.new_pending("j-hb", "u1", "storage:k.mp4")
+    repo.create(job)
+    claimed = repo.try_claim_for_processing("j-hb")
+    assert claimed is not None
+    token = claimed.claim_token
+    assert token
+
+    near = datetime.now(timezone.utc) + timedelta(seconds=5)
+    claimed.lease_expires_at = near
+    repo.update(claimed)
+
+    assert repo.renew_lease("j-hb", claim_token=token, lease_seconds=300) is True
+    renewed = repo.get("j-hb")
+    assert renewed is not None
+    assert renewed.lease_expires_at is not None
+    assert renewed.lease_expires_at > near
+
+    assert repo.renew_lease("j-hb", claim_token="other", lease_seconds=300) is False
+
+
+def test_null_lease_uses_soft_timeout() -> None:
+    from datetime import timedelta
+
+    from app.core.config import get_settings
+
+    repo = InMemoryClipJobRepository()
+    job = ClipJobRecord.new_pending("j-null", "u1", "storage:k.mp4")
+    repo.create(job)
+    claimed = repo.try_claim_for_processing("j-null")
+    assert claimed is not None
+    claimed.lease_expires_at = None
+    claimed.updated_at = datetime.now(timezone.utc)
+    repo.update(claimed)
+
+    # Fresh NULL lease must not be reclaimable.
+    assert repo.try_claim_for_processing("j-null") is None
+
+    claimed.updated_at = datetime.now(timezone.utc) - timedelta(
+        seconds=get_settings().arq_job_timeout + 1
+    )
+    repo.update(claimed)
+    assert repo.try_claim_for_processing("j-null") is not None
+
+
 def test_try_claim_skips_terminal() -> None:
     repo = InMemoryClipJobRepository()
     job = ClipJobRecord.new_pending("j2", "u1", "storage:k.mp4")

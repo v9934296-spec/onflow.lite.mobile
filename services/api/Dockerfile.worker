@@ -20,7 +20,7 @@ RUN set -eux; \
     exit 1
 COPY services/api/app ./app
 ENV PYTHONPATH=/app
-RUN python3.12 -c "import fastapi, sqlmodel, arq, structlog"
+RUN python3.12 -c "import fastapi, sqlmodel, arq, structlog, alembic, boto3, redis, pydantic_settings, slowapi, sentry_sdk"
 RUN chown -R nonroot:nonroot /app
 USER nonroot
 CMD ["python3.12", "-m", "arq", "app.services.job_queue.WorkerSettings"]

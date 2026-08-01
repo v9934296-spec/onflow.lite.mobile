@@ -107,15 +107,32 @@ class ClipJobRecord:
         self.lease_expires_at = now + timedelta(seconds=max(1, lease_seconds))
         return token
 
-    def lease_is_live(self, *, now: datetime | None = None) -> bool:
+    def lease_is_live(
+        self,
+        *,
+        now: datetime | None = None,
+        lease_seconds: int | None = None,
+    ) -> bool:
+        """True while another worker still owns this processing job."""
         if self.status != "processing":
             return False
-        expires = self.lease_expires_at
-        if expires is None:
-            return False
         current = now or utcnow()
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
         if current.tzinfo is None:
             current = current.replace(tzinfo=timezone.utc)
-        return expires > current
+
+        expires = self.lease_expires_at
+        if expires is not None:
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            return expires > current
+
+        # Legacy / unleased processing rows: treat updated_at + timeout as a soft lease
+        # so deploy-time NULL leases are not immediately reclaimable.
+        if lease_seconds is None:
+            from app.core.config import get_settings
+
+            lease_seconds = max(1, int(get_settings().arq_job_timeout))
+        updated = self.updated_at
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        return (current - updated).total_seconds() < max(1, lease_seconds)

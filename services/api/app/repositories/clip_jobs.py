@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any, Protocol, runtime_checkable
@@ -35,6 +36,10 @@ class ClipJobRepository(Protocol):
     def create_exclusive(self, job: ClipJobRecord) -> None: ...
     def get(self, job_id: str) -> ClipJobRecord | None: ...
     def update(self, job: ClipJobRecord) -> None: ...
+    def update_claimed(self, job: ClipJobRecord, *, claim_token: str) -> bool: ...
+    def renew_lease(
+        self, job_id: str, *, claim_token: str, lease_seconds: int
+    ) -> bool: ...
     def get_for_user(self, job_id: str, user_id: str) -> ClipJobRecord | None: ...
     def list_for_user(self, user_id: str, *, limit: int) -> list[dict[str, Any]]: ...
     def list_full_for_user(self, user_id: str, *, limit: int) -> list[ClipJobRecord]: ...
@@ -71,6 +76,28 @@ class InMemoryClipJobRepository:
 
     def update(self, job: ClipJobRecord) -> None:
         self._by_id[job.id] = job
+
+    def update_claimed(self, job: ClipJobRecord, *, claim_token: str) -> bool:
+        existing = self._by_id.get(job.id)
+        if existing is None or existing.claim_token != claim_token:
+            return False
+        self._by_id[job.id] = job
+        return True
+
+    def renew_lease(self, job_id: str, *, claim_token: str, lease_seconds: int) -> bool:
+        from datetime import timedelta
+
+        job = self._by_id.get(job_id)
+        if (
+            job is None
+            or job.status != "processing"
+            or job.claim_token != claim_token
+        ):
+            return False
+        now = datetime.now(timezone.utc)
+        job.updated_at = now
+        job.lease_expires_at = now + timedelta(seconds=max(1, lease_seconds))
+        return True
 
     def get_for_user(self, job_id: str, user_id: str) -> ClipJobRecord | None:
         j = self._by_id.get(job_id)
@@ -154,7 +181,7 @@ class InMemoryClipJobRepository:
             return None
         lease_seconds = max(1, int(get_settings().arq_job_timeout))
         if job.status == "processing":
-            if job.lease_is_live():
+            if job.lease_is_live(lease_seconds=lease_seconds):
                 return None
             job.take_lease(lease_seconds=lease_seconds)
             return job
@@ -273,6 +300,58 @@ class SqlClipJobRepository:
             m.clip_metadata = job.clip_metadata
             session.add(m)
             session.commit()
+
+    def update_claimed(self, job: ClipJobRecord, *, claim_token: str) -> bool:
+        """Persist job only if ``claim_token`` still owns the row."""
+        from sqlalchemy import update as sa_update
+
+        with self._session_factory() as session:
+            result = session.execute(
+                sa_update(ClipJobModel)
+                .where(
+                    ClipJobModel.id == job.id,
+                    ClipJobModel.claim_token == claim_token,
+                )
+                .values(
+                    status=job.status,
+                    updated_at=job.updated_at,
+                    failure_reason=job.failure_reason,
+                    result_json_text=(
+                        None if job.result_json is None else json.dumps(job.result_json)
+                    ),
+                    clip_label=job.clip_label,
+                    tier=job.tier,
+                    input_reference=job.input_reference,
+                    quota_source=job.quota_source,
+                    claim_token=job.claim_token,
+                    claimed_at=job.claimed_at,
+                    lease_expires_at=job.lease_expires_at,
+                    attempt_number=int(job.attempt_number or 0),
+                    metadata_json=json.dumps(job.clip_metadata or {}),
+                )
+            )
+            session.commit()
+            return int(result.rowcount or 0) > 0  # type: ignore[attr-defined]
+
+    def renew_lease(self, job_id: str, *, claim_token: str, lease_seconds: int) -> bool:
+        from datetime import datetime, timedelta, timezone as _tz
+
+        from sqlalchemy import update as sa_update
+
+        now = datetime.now(_tz.utc)
+        lease_expires = now + timedelta(seconds=max(1, lease_seconds))
+        with self._session_factory() as session:
+            result = session.execute(
+                sa_update(ClipJobModel)
+                .where(
+                    ClipJobModel.id == job_id,
+                    ClipJobModel.status == "processing",
+                    ClipJobModel.claim_token == claim_token,
+                )
+                .values(updated_at=now, lease_expires_at=lease_expires)
+            )
+            session.commit()
+            return int(result.rowcount or 0) > 0  # type: ignore[attr-defined]
 
     def get_for_user(self, job_id: str, user_id: str) -> ClipJobRecord | None:
         with self._session_factory() as session:
@@ -417,15 +496,27 @@ class SqlClipJobRepository:
                         expires = expires.replace(tzinfo=_tz.utc)
                     if expires > now:
                         return None
-                # Expired / missing lease — reclaim atomically.
+                else:
+                    # Soft lease for legacy NULL lease_expires_at rows.
+                    updated = m.updated_at
+                    if updated is not None:
+                        if updated.tzinfo is None:
+                            updated = updated.replace(tzinfo=_tz.utc)
+                        if (now - updated).total_seconds() < lease_seconds:
+                            return None
+                stale_cutoff = now - timedelta(seconds=lease_seconds)
+                # Expired explicit lease, or NULL lease older than timeout.
                 result = session.execute(
                     sa_update(ClipJobModel)
                     .where(
                         ClipJobModel.id == job_id,
                         ClipJobModel.status == "processing",
                         or_(
-                            ClipJobModel.lease_expires_at.is_(None),
                             ClipJobModel.lease_expires_at <= now,
+                            (
+                                ClipJobModel.lease_expires_at.is_(None)
+                                & (ClipJobModel.updated_at <= stale_cutoff)
+                            ),
                         ),
                     )
                     .values(
