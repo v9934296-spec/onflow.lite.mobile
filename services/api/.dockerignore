@@ -7,14 +7,5 @@ __pycache__/
 data/
 *.db
 .pytest_cache/
-
-# Internal planning docs — not needed in production image
-../../RELEASE.md
-../../RELEASE_HISTORY.md
-../../PHASE_B_READY.md
-../../COST_MODEL.md
-../../notes/
-../../research/
-../../docs/REBUILD_PLAN.md
-../../legal-site/
-../../GOOGLE_SITES_LEGAL_PAGES.md
+.venv/
+venv/

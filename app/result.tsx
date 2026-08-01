@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { getFlowRedirect } from "../src/flow";
+import { getFlowRedirect } from "../src/flowGuard";
 import { useSession } from "../src/session";
 import { C, F } from "../src/theme";
 import type { ManualOutcome } from "../src/types";

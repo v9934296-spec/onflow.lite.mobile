@@ -1,11 +1,9 @@
 import RevenueCatUI, { PAYWALL_RESULT } from "react-native-purchases-ui";
 import type { CustomerInfo } from "react-native-purchases";
 
-import { RC_ENTITLEMENT_PRO } from "./constants";
 import {
   configureRevenueCat,
   fetchCustomerInfo,
-  hasActiveProEntitlement,
   isNativeStorePlatform,
 } from "./revenueCat";
 import { syncCustomerInfoToBackend } from "./sync";
@@ -46,37 +44,6 @@ export async function presentProPaywall(): Promise<PaywallFlowResult> {
 
   try {
     const result = await RevenueCatUI.presentPaywall({ displayCloseButton: true });
-    return customerInfoAfterPaywall(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not present paywall.";
-    return { status: "error", message };
-  }
-}
-
-/** Present paywall only when `onflow-lite Pro` is missing. */
-export async function presentProPaywallIfNeeded(): Promise<PaywallFlowResult> {
-  if (!isNativeStorePlatform()) {
-    return {
-      status: "unsupported",
-      message: "In-app purchases require an iOS or Android build (not web).",
-    };
-  }
-
-  const ok = await configureRevenueCat();
-  if (!ok) {
-    return { status: "error", message: "RevenueCat failed to configure." };
-  }
-
-  try {
-    const info = await fetchCustomerInfo();
-    if (hasActiveProEntitlement(info)) {
-      return { status: "not_presented", message: "Already entitled to onflow-lite Pro." };
-    }
-
-    const result = await RevenueCatUI.presentPaywallIfNeeded({
-      requiredEntitlementIdentifier: RC_ENTITLEMENT_PRO,
-      displayCloseButton: true,
-    });
     return customerInfoAfterPaywall(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not present paywall.";

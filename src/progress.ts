@@ -147,23 +147,3 @@ export async function saveAttempts(
     };
   }
 }
-
-export async function appendAttempt(
-  userId: string,
-  attempt: LandedAttempt,
-): Promise<StorageResult> {
-  const { data } = await loadAttempts(userId);
-  return saveAttempts(userId, [...data, attempt]);
-}
-
-export async function clearAttempts(userId: string): Promise<StorageResult> {
-  try {
-    await AsyncStorage.removeItem(keyFor(userId));
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Failed to clear progress",
-    };
-  }
-}

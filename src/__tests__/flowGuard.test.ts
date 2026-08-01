@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getFlowRedirect } from "../flow";
+import { getFlowRedirect } from "../flowGuard";
 
 describe("getFlowRedirect", () => {
   it("sends capture to trick selection when no trick is active", () => {

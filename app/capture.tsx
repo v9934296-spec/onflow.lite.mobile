@@ -14,7 +14,7 @@ import { uploadClipToSession } from "../src/api/clipApi";
 import { useAccount } from "../src/auth/accountContext";
 import { isQuotaExceededMessage, PAYWALL_ROUTE } from "../src/billing/quota";
 import { SAMPLE_CLIPS, analyzeSample, analyzeUserClip } from "../src/engine";
-import { getFlowRedirect } from "../src/flow";
+import { getFlowRedirect } from "../src/flowGuard";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSession } from "../src/session";
 import { C, F } from "../src/theme";

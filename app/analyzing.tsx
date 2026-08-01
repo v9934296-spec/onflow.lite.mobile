@@ -6,7 +6,7 @@ import { clearPendingAnalysisJob } from "../src/analysis/pendingAnalysisStore";
 import { mapClipJobToAnalysis } from "../src/analysis/mapClipJobToAnalysis";
 import { pollClipJobUntilDone } from "../src/analysis/pollClipJob";
 import { useAccount } from "../src/auth/accountContext";
-import { getFlowRedirect } from "../src/flow";
+import { getFlowRedirect } from "../src/flowGuard";
 import { useSession } from "../src/session";
 import { C, F } from "../src/theme";
 import { Btn } from "../src/ui";

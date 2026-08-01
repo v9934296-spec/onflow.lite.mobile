@@ -22,7 +22,7 @@ import {
   type WhatsNextPayload,
 } from "../src/api/progressionApi";
 import { RatingLine } from "../src/charts";
-import { adaptTrickStats, formatTrickDisplay } from "../src/yourFlowAdapter";
+import { adaptTrickStats, formatTrickDisplay } from "../src/progressionAdapter";
 import { C, F, SPACE } from "../src/theme";
 import { Card, Eyebrow, SkeletonLines, WeekRow } from "../src/ui";
 import type { DaySlot } from "../src/progress";

@@ -16,7 +16,7 @@ import {
   fetchProgressionTimeline,
   type ProgressionTimelineItem,
 } from "../src/api/progressionApi";
-import { formatTrickDisplay } from "../src/yourFlowAdapter";
+import { formatTrickDisplay } from "../src/progressionAdapter";
 import { C, F, RADIUS, SPACE } from "../src/theme";
 import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 

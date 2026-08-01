@@ -14,13 +14,13 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   },
 }));
 
-import { clearLog, loadLog, saveLog } from "../storage";
-import { userScopedStorageKey } from "../storage/userScopedStorage";
+import { clearLog, loadLog, saveLog } from "../../storage/clipLog";
+import { userScopedStorageKey } from "../../storage/userScopedStorage";
 
 const USER_A = "user-a";
 const USER_B = "user-b";
 
-describe("storage", () => {
+describe("clipLog", () => {
   beforeEach(() => {
     Object.keys(store).forEach((k) => delete store[k]);
   });

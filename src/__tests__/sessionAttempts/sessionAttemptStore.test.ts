@@ -1,5 +1,16 @@
 ﻿import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
+}));
+
+vi.mock("expo-constants", () => ({
+  default: {
+    expoConfig: { version: "1.0.0", ios: { buildNumber: "1" } },
+    nativeBuildVersion: "1",
+  },
+}));
+
 vi.mock("@react-native-async-storage/async-storage", () => {
   const store = new Map<string, string>();
   return {

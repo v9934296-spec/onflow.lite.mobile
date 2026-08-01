@@ -4,17 +4,6 @@ export const ENGINE_VERSION = "pte-lite-v0.1";
 export const MIN_CLIP_DURATION_SEC = 2;
 export const MIN_CONFIDENCE_FOR_RATING = 50;
 
-export const TRICKS = [
-  "Ollie",
-  "Kickflip",
-  "Heelflip",
-  "Pop Shove-it",
-  "Tre Flip",
-  "BS 50-50",
-  "FS Boardslide",
-  "Nollie",
-] as const;
-
 export const SAMPLE_CLIPS: SampleClip[] = [
   { id: "kf-flat", label: "Kickflip — flat", canonical: "Kickflip", spot: "Embarcadero flat", durationSec: 6 },
   { id: "bs-5050", label: "BS 50-50 — ledge", canonical: "BS 50-50", spot: "3rd & Army ledge", durationSec: 8 },

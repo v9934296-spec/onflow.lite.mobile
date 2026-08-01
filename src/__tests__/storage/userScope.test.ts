@@ -20,7 +20,7 @@ import {
   scopedKey,
   setStorageUserId,
 } from "../../storage/userScope";
-import { clearLog, loadLog, saveLog } from "../../storage";
+import { clearLog, loadLog, saveLog } from "../../storage/clipLog";
 import type { LoggedClip } from "../../types";
 
 function makeEntry(id: string): LoggedClip {

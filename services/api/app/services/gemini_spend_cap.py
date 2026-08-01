@@ -13,7 +13,7 @@ from app.models import GeminiSpendDailyModel
 
 _log = logging.getLogger(__name__)
 
-# Upper-bound estimates per call in USD cents (see COST_MODEL.md).
+# Upper-bound estimates per call in USD cents.
 _COST_PER_CALL_CENTS: dict[str, int] = {
     "gemini-2.5-flash-lite": 8,
     "gemini-2.5-flash": 20,

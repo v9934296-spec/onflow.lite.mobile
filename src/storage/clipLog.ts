@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { LoadResult, LoggedClip, StorageResult } from "./types";
-import { userScopedStorageKey } from "./storage/userScopedStorage";
+import { LoadResult, LoggedClip, StorageResult } from "../types";
+import { userScopedStorageKey } from "./userScopedStorage";
 
 function keyFor(userId: string): string {
   return userScopedStorageKey(userId, "clipLog");
@@ -41,9 +41,4 @@ export async function clearLog(userId: string): Promise<StorageResult> {
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Failed to clear log" };
   }
-}
-
-export async function deleteLogEntry(userId: string, id: string): Promise<StorageResult> {
-  const { data } = await loadLog(userId);
-  return saveLog(userId, data.filter((entry) => entry.id !== id));
 }

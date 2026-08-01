@@ -9,7 +9,6 @@ export { isProTier, isQuotaExceededMessage } from "./quota";
 export {
   presentCustomerCenter,
   presentProPaywall,
-  presentProPaywallIfNeeded,
   type PaywallFlowResult,
 } from "./paywallPresentation";
 export { PurchasesProvider, usePurchases } from "./purchasesContext";

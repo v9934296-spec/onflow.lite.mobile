@@ -31,7 +31,7 @@ import {
   buildCurrentFocus,
   formatTrickDisplay,
   pickActiveBattle,
-} from "../src/yourFlowAdapter";
+} from "../src/progressionAdapter";
 import { C, F, RADIUS, SPACE } from "../src/theme";
 import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 

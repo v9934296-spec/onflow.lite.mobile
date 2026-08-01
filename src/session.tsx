@@ -11,7 +11,7 @@ import { track } from "./analytics";
 import { loadPendingAnalysisJob } from "./analysis/pendingAnalysisStore";
 import { useAccount } from "./auth/accountContext";
 import { loadAttempts, saveAttempts } from "./progress";
-import { clearLog as clearLogStorage, loadLog, saveLog } from "./storage";
+import { clearLog as clearLogStorage, loadLog, saveLog } from "./storage/clipLog";
 import type { SelectedTrick } from "./tricks/types";
 import type { Analysis, LandedAttempt, LoggedClip, ManualLog, StorageResult } from "./types";
 
