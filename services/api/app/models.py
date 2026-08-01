@@ -31,6 +31,10 @@ class ClipJobModel(SQLModel, table=True):
     tier: str = Field(default="free")
     quota_source: Optional[str] = Field(default=None)
     metadata_json: str = Field(default="{}", sa_column=Column(Text))
+    claim_token: Optional[str] = Field(default=None, max_length=64)
+    claimed_at: Optional[datetime] = Field(default=None)
+    lease_expires_at: Optional[datetime] = Field(default=None)
+    attempt_number: int = Field(default=0)
 
     @property
     def result_json(self) -> dict[str, Any] | None:

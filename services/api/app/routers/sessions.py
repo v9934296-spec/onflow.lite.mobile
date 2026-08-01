@@ -73,21 +73,23 @@ def _clip_counts(db: Session, session_id: str) -> tuple[int, int]:
         SessionAttemptModel.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     attempt_count = int(db.exec(attempt_stmt).one())
-    # Fall back to clip_count when no manual attempts have been synced yet.
-    if attempt_count == 0:
-        attempt_count = clip_count
     return clip_count, attempt_count
 
 
 def _session_list_aggregates(
     db: Session, session_ids: list[str]
-) -> tuple[dict[str, int], dict[str, list[str]], dict[str, str]]:
-    """Batch per-session list metrics in 3 grouped queries (avoids N+1 over clips).
+) -> tuple[dict[str, int], dict[str, int], dict[str, list[str]], dict[str, str]]:
+    """Batch per-session list metrics (avoids N+1 over clips/attempts).
 
-    Returns (clip_count_by_session, tricks_by_session, latest_thumbnail_by_session).
+    Returns (
+        clip_count_by_session,
+        attempt_count_by_session,
+        tricks_by_session,
+        latest_thumbnail_by_session,
+    ).
     """
     if not session_ids:
-        return {}, {}, {}
+        return {}, {}, {}, {}
 
     count_rows = db.exec(
         select(ClipModel.session_id, func.count(ClipModel.id))
@@ -98,6 +100,16 @@ def _session_list_aggregates(
         .group_by(ClipModel.session_id)
     ).all()
     counts = {sid: int(c) for sid, c in count_rows}
+
+    attempt_rows = db.exec(
+        select(SessionAttemptModel.session_id, func.count(SessionAttemptModel.id))
+        .where(
+            SessionAttemptModel.session_id.in_(session_ids),  # type: ignore[union-attr]
+            SessionAttemptModel.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .group_by(SessionAttemptModel.session_id)
+    ).all()
+    attempt_counts = {sid: int(c) for sid, c in attempt_rows}
 
     trick_rows = db.exec(
         select(ClipModel.session_id, ClipModel.trick_id)
@@ -127,7 +139,7 @@ def _session_list_aggregates(
         if url and sid not in thumbs:
             thumbs[sid] = url
 
-    return counts, tricks, thumbs
+    return counts, attempt_counts, tricks, thumbs
 
 
 def _session_to_response(
@@ -327,7 +339,7 @@ def list_my_sessions(
         next_cursor = _encode_cursor(last.started_at, last.id)
         rows = rows[:limit]
 
-    counts, tricks_by_session, thumb_by_session = _session_list_aggregates(
+    counts, attempt_counts, tricks_by_session, thumb_by_session = _session_list_aggregates(
         db, [row.id for row in rows]
     )
     items: list[SessionListItem] = []
@@ -341,8 +353,7 @@ def list_my_sessions(
                 started_at=iso_z(row.started_at),
                 ended_at=iso_z(row.ended_at) if row.ended_at else None,
                 clip_count=clip_count,
-                # attempt_count mirrors clip_count until P.T.E. distinguishes attempts.
-                attempt_count=clip_count,
+                attempt_count=attempt_counts.get(row.id, 0),
                 breakthrough_note=row.breakthrough_note,
                 tricks_attempted=tricks_by_session.get(row.id, []),
                 preview_thumbnail_url=thumb_by_session.get(row.id),

@@ -149,6 +149,7 @@ def test_missing_optional_fields_safe(authed_client: TestClient) -> None:
     assert item["spot"] is None
     assert item["focus_trick"] is None
     assert item["clips_count"] == 0
+    assert item["attempt_count"] == 0
     assert item["best_pte_score"] is None
     assert item["thumbnail_url"] is None
     assert item["duration_seconds"] == 900
@@ -170,8 +171,53 @@ def test_preview_metrics_aggregate(authed_client: TestClient) -> None:
         if i["session_id"] == sid
     )
     assert item["clips_count"] == 2
+    assert item["attempt_count"] == 0
     assert item["best_pte_score"] == 9
     assert item["thumbnail_url"] == "https://cdn/newest.jpg"
+
+
+def test_timeline_attempt_count_from_synced_attempts(authed_client: TestClient) -> None:
+    sid = _insert_session("test-user-001", started=BASE, ended=BASE + timedelta(minutes=20))
+    _insert_clip(sid, "test-user-001", pte=4, created_at=BASE + timedelta(minutes=1))
+    sync = authed_client.post(
+        "/api/v1/session-attempts/sync",
+        json={
+            "attempts": [
+                {
+                    "id": "tl-a1",
+                    "session_id": sid,
+                    "trick_id": "kickflip",
+                    "canonical_name": "Kickflip",
+                    "outcome": "landed",
+                    "logged_at": "2026-06-01T18:05:00Z",
+                },
+                {
+                    "id": "tl-a2",
+                    "session_id": sid,
+                    "trick_id": "kickflip",
+                    "canonical_name": "Kickflip",
+                    "outcome": "missed",
+                    "logged_at": "2026-06-01T18:06:00Z",
+                },
+                {
+                    "id": "tl-a3",
+                    "session_id": sid,
+                    "trick_id": "heelflip",
+                    "canonical_name": "Heelflip",
+                    "outcome": "landed",
+                    "logged_at": "2026-06-01T18:07:00Z",
+                },
+            ]
+        },
+    )
+    assert sync.status_code == 200, sync.text
+    item = next(
+        i
+        for i in authed_client.get("/api/v1/progression/timeline").json()["items"]
+        if i["session_id"] == sid
+    )
+    assert item["clips_count"] == 1
+    assert item["attempt_count"] == 3
 
 
 def test_large_history_remains_paginated(authed_client: TestClient) -> None:

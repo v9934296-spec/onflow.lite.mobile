@@ -20,11 +20,33 @@ def test_try_claim_pending_to_processing_once() -> None:
     first = repo.try_claim_for_processing("j1")
     assert first is not None
     assert first.status == "processing"
+    assert first.claim_token
+    assert first.lease_expires_at is not None
 
-    # Second claim while processing: resume-style return (same job).
+    # Second claim while lease is live: exclusive — other worker must skip.
     second = repo.try_claim_for_processing("j1")
-    assert second is not None
-    assert second.status == "processing"
+    assert second is None
+
+
+def test_try_claim_reclaims_stale_processing() -> None:
+    from datetime import timedelta
+
+    repo = InMemoryClipJobRepository()
+    job = ClipJobRecord.new_pending("j-stale", "u1", "storage:k.mp4")
+    repo.create(job)
+    claimed = repo.try_claim_for_processing("j-stale")
+    assert claimed is not None
+    first_token = claimed.claim_token
+
+    # Expire the lease so reclaim is allowed.
+    claimed.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    repo.update(claimed)
+
+    reclaimed = repo.try_claim_for_processing("j-stale")
+    assert reclaimed is not None
+    assert reclaimed.status == "processing"
+    assert reclaimed.claim_token != first_token
+    assert reclaimed.attempt_number >= 2
 
 
 def test_try_claim_skips_terminal() -> None:

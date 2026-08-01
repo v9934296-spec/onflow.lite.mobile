@@ -30,6 +30,16 @@ vi.mock("@react-native-async-storage/async-storage", () => {
   };
 });
 
+vi.mock("../../sessionAttempts/attemptOutbox", () => ({
+  enqueueAttemptForSync: vi.fn(async () => undefined),
+  flushAttemptOutbox: vi.fn(async () => ({ flushed: 0, remaining: 0 })),
+}));
+
+vi.mock("../../api/attemptApi", () => ({
+  fetchSessionAttempts: vi.fn(async () => ({ ok: true, data: [] })),
+  syncSessionAttempts: vi.fn(async () => ({ ok: true, data: { accepted: [], rejected: [] } })),
+}));
+
 import {
   appendSessionAttempt,
   clearSessionAttempts,

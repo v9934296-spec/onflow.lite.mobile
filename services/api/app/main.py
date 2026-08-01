@@ -73,7 +73,8 @@ async def _resume_interrupted_jobs(app: FastAPI) -> None:
     storage = app.state.storage
     from app.services.job_queue import enqueue_clip_job
 
-    RESUME_SKIP_RECENT_SECONDS = 60  # skip jobs updated in the last 60s — ARQ likely still has them
+    # Pending jobs: short skip — ARQ likely still has a fresh delivery.
+    RESUME_SKIP_PENDING_SECONDS = 60
     now = datetime.now(timezone.utc)
 
     resumable = list(repo.list_resumable())
@@ -86,15 +87,26 @@ async def _resume_interrupted_jobs(app: FastAPI) -> None:
         pass
 
     for job in resumable:
-        updated = job.updated_at
-        if updated.tzinfo is None:
-            updated = updated.replace(tzinfo=timezone.utc)
-        age_seconds = (now - updated).total_seconds()
-        if age_seconds < RESUME_SKIP_RECENT_SECONDS:
-            logger.info(
-                "resume: skipping recent job (age=%.0fs) job_id=%s", age_seconds, job.id
-            )
-            continue
+        if job.status == "processing":
+            if job.lease_is_live(now=now):
+                logger.info(
+                    "resume: skipping live lease job_id=%s",
+                    job.id,
+                )
+                continue
+        else:
+            updated = job.updated_at
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            age_seconds = (now - updated).total_seconds()
+            if age_seconds < RESUME_SKIP_PENDING_SECONDS:
+                logger.info(
+                    "resume: skipping recent job (age=%.0fs status=%s) job_id=%s",
+                    age_seconds,
+                    job.status,
+                    job.id,
+                )
+                continue
         ref = job.input_reference
 
         if ref.startswith("storage:"):
