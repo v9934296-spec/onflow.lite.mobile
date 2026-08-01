@@ -4,10 +4,12 @@ Use this after the billing/API code gates land. Do not commit secrets here.
 
 ## Railway (API + worker)
 
-1. Confirm **two** services: API (`services/api/Dockerfile`) and Worker (`services/api/Dockerfile.worker`).
+1. Confirm **two** services from this repo:
+   - **API** — config `railway.toml` → `services/api/Dockerfile` (Alembic pre-deploy + `/health`).
+   - **Worker** — config `railway.worker.toml` → `services/api/Dockerfile.worker` (ARQ + hourly pending-upload reaper). Do not ship API-only envs.
 2. Shared: Postgres, Redis, R2 credentials on **both** services.
-3. Before traffic: `python3.12 -m alembic upgrade head` (Railway pre-deploy / release; bare `alembic` is not on PATH in the API image).
-4. **Single API replica** until distributed quota lock exists (`clip_quota.py`).
+3. Before traffic: `python3.12 -m alembic upgrade head` (Railway pre-deploy / release; bare `alembic` is not on PATH in the API image). `create_all` is disabled in production/staging.
+4. API replicas: quota charge uses Postgres `SELECT … FOR UPDATE` (`clip_quota.py`). Keep feed SSE fan-out in mind — the SSE hub is still in-process (clients pin to one replica or use Bearer + ticket refresh).
 5. Env (production):
    - `ONFLOW_ENV=production`
    - `ONFLOW_JWT_SECRET`
@@ -48,5 +50,5 @@ Use this after the billing/API code gates land. Do not commit secrets here.
 ## Explicitly deferred
 
 - Android Google Sign-In
-- Multi-replica quota ledger
+- Cross-replica SSE pub/sub (Redis) for feed streams
 - App Store submit metadata polish beyond TestFlight

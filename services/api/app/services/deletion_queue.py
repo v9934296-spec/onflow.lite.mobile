@@ -160,11 +160,10 @@ async def hard_delete_user_clips(
     del ctx
 
     async def _run() -> dict[str, Any]:
-        from app.core.database import create_db_tables, get_engine
+        from app.core.database import get_engine
         from app.repositories.clip_jobs import SqlClipJobRepository
         from app.services.object_storage import build_storage
 
-        create_db_tables()
         engine = get_engine()
         repo = SqlClipJobRepository(lambda: Session(engine))
         storage = build_storage()

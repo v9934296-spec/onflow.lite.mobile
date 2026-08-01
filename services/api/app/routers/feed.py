@@ -11,7 +11,11 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, func, select
 
-from app.core.auth import get_current_user, get_current_user_sse
+from app.core.auth import (
+    get_current_user,
+    get_current_user_sse,
+    issue_sse_access_token,
+)
 from app.core.database import get_db
 from app.core.tiers import normalize_tier
 from app.models import FeedEventModel, SkateSessionModel, UserModel
@@ -194,6 +198,19 @@ def _backfill_since_event_id(
     )
     user = _feed_user(db, user_id)
     return [_event_to_item(row, user) for row in db.exec(stmt)]
+
+
+@router.post("/feed/sse-ticket")
+def issue_feed_sse_ticket(
+    user_id: str = Depends(get_current_user),
+) -> dict[str, object]:
+    """Mint a short-lived SSE ticket for EventSource ``?token=`` (not the session JWT)."""
+    ttl = 300
+    return {
+        "token": issue_sse_access_token(user_id, ttl_seconds=ttl),
+        "expires_in": ttl,
+        "token_type": "sse",
+    }
 
 
 @router.get("/feed/stream")

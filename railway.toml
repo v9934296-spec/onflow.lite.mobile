@@ -2,6 +2,9 @@
 dockerfilePath = "services/api/Dockerfile"
 watchPaths = ["services/api/**"]
 
+# Companion worker service: use `railway.worker.toml` (Dockerfile.worker). Do not
+# deploy API-only — clip analysis and the hourly pending-upload reaper run there.
+
 [deploy]
 # Bare `alembic` is not on PATH in the Wolfi image — use the module form.
 preDeployCommand = ["python3.12 -m alembic upgrade head"]

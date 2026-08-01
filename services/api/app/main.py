@@ -17,6 +17,7 @@ from sqlmodel import Session
 from app.core.config import get_settings
 from app.core.database import create_db_tables, get_engine
 from app.core.logging import RequestIdMiddleware, setup_logging
+from app.core.rate_limit import _retry_after_seconds
 
 setup_logging()
 
@@ -196,6 +197,7 @@ async def lifespan(app: FastAPI):
     await _resume_interrupted_jobs(app)
 
     # Best-effort cleanup of abandoned pending uploads (storage + clip rows).
+    # Also scheduled hourly on the ARQ worker (see job_queue.reap_pending_clips_cron).
     try:
         from app.services.clip_pending_reaper import reap_abandoned_pending_clips
 
@@ -205,6 +207,25 @@ async def lifespan(app: FastAPI):
         logger.exception("startup_pending_reaper_failed")
 
     yield
+
+    from app.core.database import dispose_engine
+    from app.services.job_queue import close_arq_pool
+
+    redis = getattr(app.state, "redis", None)
+    if redis is not None:
+        try:
+            await redis.aclose()
+        except Exception:
+            logger.exception("async_redis_close_failed")
+        app.state.redis = None
+    try:
+        await close_arq_pool()
+    except Exception:
+        logger.exception("arq_pool_close_failed")
+    try:
+        dispose_engine()
+    except Exception:
+        logger.exception("engine_dispose_failed")
 
 
 def create_app() -> FastAPI:
@@ -261,7 +282,7 @@ def create_app() -> FastAPI:
             {"error": f"Rate limit exceeded: {exc.detail}"},
             status_code=429,
         )
-        response.headers["Retry-After"] = str(24 * 3600)
+        response.headers["Retry-After"] = str(_retry_after_seconds(exc))
         return response
 
     app.state.limiter = limiter

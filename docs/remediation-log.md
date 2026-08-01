@@ -488,14 +488,18 @@ Clip history remains uncapped via `iter_all_for_user`.
 - Client `track()` fire-and-forgets to that endpoint when signed in; buffers
   offline; still logs in `__DEV__`.
 
-### Product honesty — free-only Lite paywall
+### Billing / paywall (superseded — see Entry 9)
 
-- Paywall copy no longer implies working IAP; documents server-side Pro only.
+Historically this entry noted a free-only Lite paywall before RevenueCat IAP
+shipped. **Live product:** RevenueCat entitlements (`onflow-lite Pro`), client
+Purchases SDK, paywall + Customer Center, and `POST /api/v1/billing/sync` +
+RevenueCat webhooks. Treat older “no IAP / server-side Pro only” wording as
+archived.
 
 ### Group 5 follow-up — pending upload reaper
 
 - `reap_abandoned_pending_clips` on API startup; `ONFLOW_CLIP_PENDING_REAP_HOURS`
-  (default 24).
+  (default 24). (Also hourly on the ARQ worker as of Entry 9.)
 
 ### Verification
 
@@ -510,9 +514,9 @@ Clip history remains uncapped via `iter_all_for_user`.
 |-------|-------|--------|
 | 1 | Production analytics | DONE (first-party) — Entry 6; vendor option still available later |
 | 2 | Progression single source of truth | PARTIAL — on-device isolation DONE (Entry 1); server canonical model open (arch) |
-| 3 | Job/quota/queue reliability | PARTIAL — upload guard (Entry 2) + enqueue refund + CAS claim (Entry 6); outbox/ledger open |
+| 3 | Job/quota/queue reliability | MOSTLY DONE — FOR UPDATE quota charge + leases + reaper cron (Entries 6–9); SSE hub still in-process |
 | 4 | Privacy deletion/export | MOSTLY DONE — export tables + media purge + in-app delete/export (Entries 3–6) |
-| 5 | Upload validation | DONE — size check (Entry 2) + pending reaper (Entry 6); media-probe optional follow-up |
+| 5 | Upload validation | DONE — size check (Entry 2) + pending reaper (Entries 6 + 9); media-probe optional follow-up |
 | 8 | CI coverage | DONE — backend pytest + Postgres migration + Docker jobs |
 
 ## Entry 7 — Media sniff at complete-upload + quota lock + exclusive create
@@ -527,6 +531,7 @@ Clip history remains uncapped via `iter_all_for_user`.
 - `create_job_charging_quota`: per-user lock around decide-quota + insert
 - `create_exclusive` / `JobAlreadyExists` for concurrent same-clip_id completes
 - Concurrent free-tier stress test (`test_quota_lock`) pins cap respect
+- **Superseded for multi-replica:** Entry 9 moves charge to `SELECT … FOR UPDATE`
 
 ### Verification
 
@@ -551,8 +556,37 @@ Clip history remains uncapped via `iter_all_for_user`.
 - Backend `test_session_attempts` + export/delete: green
 - Frontend attemptApi + store tests + typecheck: green
 
-Still open (arch / product): distributed multi-worker quota ledger, RevenueCat
-IAP in Lite, deep issue register file.
+## Entry 9 — P1/P2 hardening (quota, schema, reaper, SSE, ops)
 
-Still missing: the deep issue register (`ONFLOW_REPOMIX_DEEP_ISSUE_REGISTER.md`)
-with the authoritative 15 P0s + acceptance criteria.
+### P1-1 — Quota multi-replica
+- `create_job_charging_quota` SQL path: lock user row (`FOR UPDATE`), count
+  monthly free jobs, insert clip job in one transaction; bonus consume under
+  the same lock. Process-local locks remain as an intra-process fast path.
+
+### P1-2 — No `create_all` in prod/staging
+- `create_db_tables` no-ops when `is_production_or_staging`; Alembic owns schema.
+- Worker / deletion paths no longer call `create_db_tables` per job.
+
+### P1-3 — Pending upload reaper on a schedule
+- ARQ cron `reap_pending_clips_cron` hourly (`WorkerSettings.cron_jobs`) in
+  addition to API startup sweep.
+
+### P1-4 — Worker codified for Railway
+- `railway.worker.toml` → `Dockerfile.worker`; ops checklist requires API + worker.
+
+### P2-2 — Docs match RevenueCat billing
+- Remediation log + ops checklist describe live IAP / entitlements (not free-only).
+
+### P2-3 — SSE query auth
+- `?token=` accepts only short-lived `purpose=sse` tickets from
+  `POST /api/v1/feed/sse-ticket` (not the long-lived session JWT). Bearer still OK.
+
+### P2-4 — Accurate `Retry-After`
+- Rate-limit handler derives seconds from slowapi detail window (minute/hour/day),
+  not a hardcoded 86400.
+
+### P2-5 — Lifespan teardown
+- After yield: close async Redis, ARQ pool, dispose SQLAlchemy engine.
+
+Still open (arch): Redis-backed SSE fan-out across API replicas; deep issue
+register file if restored separately.

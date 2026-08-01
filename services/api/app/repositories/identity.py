@@ -326,9 +326,13 @@ class IdentityRepository:
         """
         After monthly free quota is exhausted, consume one credit from the OAuth signup
         pool first, then from purchased bonus_analyses.
+
+        Uses ``SELECT … FOR UPDATE`` so concurrent API replicas cannot double-spend.
         """
         with self._sf() as session:
-            row = session.get(UserModel, user_id)
+            row = session.exec(
+                select(UserModel).where(UserModel.id == user_id).with_for_update()
+            ).first()
             if not row:
                 return False
             granted = row.bonus_analyses_granted or 0
