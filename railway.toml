@@ -3,6 +3,8 @@ dockerfilePath = "services/api/Dockerfile"
 watchPaths = ["services/api/**"]
 
 [deploy]
+# Bare `alembic` is not on PATH in the Wolfi image — use the module form.
+preDeployCommand = ["python3.12 -m alembic upgrade head"]
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"

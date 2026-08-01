@@ -6,7 +6,7 @@ Use this after the billing/API code gates land. Do not commit secrets here.
 
 1. Confirm **two** services: API (`services/api/Dockerfile`) and Worker (`services/api/Dockerfile.worker`).
 2. Shared: Postgres, Redis, R2 credentials on **both** services.
-3. Before traffic: `alembic upgrade head` (API release step or one-off run).
+3. Before traffic: `python3.12 -m alembic upgrade head` (Railway pre-deploy / release; bare `alembic` is not on PATH in the API image).
 4. **Single API replica** until distributed quota lock exists (`clip_quota.py`).
 5. Env (production):
    - `ONFLOW_ENV=production`
