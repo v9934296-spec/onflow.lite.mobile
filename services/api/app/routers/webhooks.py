@@ -28,21 +28,12 @@ _PRO_EVENTS = frozenset(
     }
 )
 
-# Downgrade ONLY on EXPIRATION — the event RevenueCat fires when entitlement
-# access has actually ended.
-#
-# Deliberately NOT downgrade events (the user is still entitled when they fire):
-# - CANCELLATION: auto-renew was turned off, but the user keeps Pro until the
-#   end of the period they already paid for. RevenueCat sends EXPIRATION when
-#   access truly ends; downgrading here would revoke paid time.
-# - PRODUCT_CHANGE: the subscription is still active; the user switched
-#   products (e.g. monthly → annual). Tier stays pro.
-# - BILLING_ISSUE: Apple's grace period / billing retry may still recover the
-#   charge. If it doesn't, EXPIRATION follows and we downgrade then.
+# Downgrade product state ONLY on EXPIRATION — the event RevenueCat fires when
+# access for that product has actually ended. The transaction service derives the
+# user's tier from all currently-active configured Pro products.
 _FREE_EVENTS = frozenset({"EXPIRATION"})
 
-# Lifecycle events we acknowledge and log but take no tier action on. Listed
-# explicitly so a future reader knows they were considered, not missed.
+# Lifecycle events we acknowledge and log but take no entitlement action on.
 _ACKNOWLEDGED_LIFECYCLE_EVENTS = frozenset(
     {
         "CANCELLATION",
@@ -52,18 +43,6 @@ _ACKNOWLEDGED_LIFECYCLE_EVENTS = frozenset(
         "TRANSFER",
     }
 )
-
-
-def _subscriber_attr_value(attrs: object, name: str) -> str | None:
-    if not isinstance(attrs, dict):
-        return None
-    raw = attrs.get(name)
-    if isinstance(raw, dict):
-        v = raw.get("value")
-        return str(v).strip() if v is not None and str(v).strip() else None
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return None
 
 
 def _event_int(event: dict, name: str) -> int | None:
@@ -78,19 +57,17 @@ def _event_int(event: dict, name: str) -> int | None:
 
 
 def _identity_candidates(event: dict, rc_app_user_id: str) -> list[str]:
-    """Return every RevenueCat identity that may map to the OnFlow account.
+    """Return RevenueCat-controlled identities that may map to the account.
 
-    RevenueCat explicitly recommends searching ``original_app_user_id`` and the
-    ``aliases`` array in addition to ``app_user_id``. The custom OnFlow subscriber
-    attribute is preferred when present because it is an explicit backend user id.
+    Do not trust a client-set subscriber attribute as an account selector. The SDK
+    identifies users with ``app_user_id`` and RevenueCat supplies the original id
+    and aliases needed to resolve anonymous-to-identified transitions.
     """
-    attrs = event.get("subscriber_attributes")
-    onflow_uid = _subscriber_attr_value(attrs, "onflow_user_id")
     original = str(event.get("original_app_user_id") or "").strip()
     aliases = event.get("aliases")
 
     out: list[str] = []
-    for value in (onflow_uid, rc_app_user_id, original):
+    for value in (rc_app_user_id, original):
         if value and value not in out:
             out.append(value)
     if isinstance(aliases, list):
@@ -116,7 +93,6 @@ def _verify_webhook_auth(request: Request) -> None:
         )
         return
     auth_header = request.headers.get("authorization", "")
-    # Constant-time comparison so the static secret can't be probed via timing.
     if not hmac.compare_digest(auth_header, f"Bearer {secret}"):
         raise HTTPException(status_code=401, detail="Invalid webhook authorization.")
 
@@ -124,38 +100,19 @@ def _verify_webhook_auth(request: Request) -> None:
 def _reup_product_ids(settings) -> set[str]:
     out: set[str] = {settings.rc_product_reup_pack.strip()}
     for x in (settings.rc_legacy_bonus_product_ids or "").split(","):
-        t = x.strip()
-        if t:
-            out.add(t)
+        value = x.strip()
+        if value:
+            out.add(value)
     out.discard("")
     return out
 
 
 def _pro_product_ids(settings) -> set[str]:
-    out: set[str] = set()
-    for x in (settings.rc_pro_product_ids or "").split(","):
-        t = x.strip()
-        if t:
-            out.add(t)
-    return out
-
-
-def _tier_for_subscription_product(product_id: str, settings) -> str | None:
-    """Return 'pro' only for allowlisted Store product IDs; otherwise None (no tier change)."""
-    pid = (product_id or "").strip()
-    if not pid:
-        return None
-    allowed = _pro_product_ids(settings)
-    if not allowed:
-        logger.warning(
-            "ONFLOW_RC_PRO_PRODUCT_IDS is empty — ignoring subscription product_id=%s",
-            pid,
-        )
-        return None
-    if pid in allowed:
-        return "pro"
-    logger.info("ignoring non-allowlisted product_id=%s for tier grant", pid)
-    return None
+    return {
+        value.strip()
+        for value in (settings.rc_pro_product_ids or "").split(",")
+        if value.strip()
+    }
 
 
 def _duplicate_response(event_id: str) -> dict:
@@ -177,21 +134,13 @@ def _raise_unknown_user_retry(event_type: str, rc_app_user_id: str) -> None:
 @router.post("/revenuecat")
 @limiter.limit(webhook_limit_per_minute, key_func=remote_ip_key)
 async def revenuecat_webhook(request: Request) -> dict:
-    """
-    RevenueCat sends events here when subscriptions or one-time purchases change.
-    Updates the user tier for subscriptions; Re-Up Pack adds bonus analyses (stackable).
-
-    Tier is granted on purchase/renewal events and revoked ONLY on EXPIRATION —
-    cancellation and billing-retry events leave the user's remaining paid access
-    intact (see _FREE_EVENTS comment above).
-    """
+    """Apply authenticated RevenueCat subscription and Re-Up events."""
     _verify_webhook_auth(request)
 
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON.") from None
-
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Invalid JSON.")
 
@@ -207,7 +156,6 @@ async def revenuecat_webhook(request: Request) -> dict:
 
     if not event_type or not rc_app_user_id:
         return {"ok": True, "action": "ignored_missing_fields"}
-
     if not event_id:
         logger.warning(
             "RevenueCat webhook missing event.id — acknowledging without mutate type=%s",
@@ -225,6 +173,13 @@ async def revenuecat_webhook(request: Request) -> dict:
     candidate_user_ids = _identity_candidates(event, rc_app_user_id)
     settings = get_settings()
     reup_ids = _reup_product_ids(settings)
+    pro_ids = _pro_product_ids(settings)
+
+    # Development compatibility: deployed environments are required to configure
+    # the allowlist at startup, while local lifecycle tests can exercise expiration
+    # without reproducing every production environment variable.
+    if not pro_ids and not settings.is_production_or_staging and product_id:
+        pro_ids = {product_id}
 
     if event_type in _PRO_EVENTS and product_id in reup_ids:
         applied = apply_revenuecat_mutation(
@@ -258,21 +213,21 @@ async def revenuecat_webhook(request: Request) -> dict:
             "bonus_analyses": total,
         }
 
-    new_tier: str | None = None
+    entitlement_active: bool | None = None
     if event_type in _PRO_EVENTS:
-        new_tier = _tier_for_subscription_product(product_id, settings)
-        if new_tier is None:
-            # Do not consume the event id. A corrected product allowlist can safely
-            # replay the original RevenueCat event from the dashboard.
+        if product_id not in pro_ids:
+            # Leave the event id unclaimed so an operator can correct the allowlist
+            # and replay the original event from RevenueCat.
             return {
                 "ok": True,
                 "action": "ignored_unknown_product",
                 "product_id": product_id,
             }
+        entitlement_active = True
     elif event_type in _FREE_EVENTS:
-        # An expiration for an unrelated product in the same RevenueCat project
-        # must never revoke OnFlow Pro.
-        if product_id not in _pro_product_ids(settings):
+        if product_id not in pro_ids:
+            # An unrelated product in the same RevenueCat project cannot affect the
+            # OnFlow entitlement. Deduplicate the no-op normally.
             if not record_revenuecat_noop(event_id):
                 return _duplicate_response(event_id)
             return {
@@ -280,14 +235,16 @@ async def revenuecat_webhook(request: Request) -> dict:
                 "action": "ignored_unknown_product",
                 "product_id": product_id,
             }
-        new_tier = "free"
+        entitlement_active = False
 
-    if new_tier:
+    if entitlement_active is not None:
         applied = apply_revenuecat_mutation(
             event_id=event_id,
             candidate_user_ids=candidate_user_ids,
             rc_customer_id=rc_app_user_id,
-            new_tier=new_tier,
+            entitlement_product_id=product_id,
+            entitlement_active=entitlement_active,
+            pro_product_ids=pro_ids,
             event_timestamp_ms=event_timestamp_ms,
         )
         if applied.duplicate:
@@ -296,9 +253,10 @@ async def revenuecat_webhook(request: Request) -> dict:
             _raise_unknown_user_retry(event_type, rc_app_user_id)
         if applied.stale:
             logger.info(
-                "stale_revenuecat_event_ignored user_id=%s event=%s event_id=%s timestamp_ms=%s",
+                "stale_revenuecat_event_ignored user_id=%s event=%s product_id=%s event_id=%s timestamp_ms=%s",
                 applied.user_id,
                 event_type,
+                product_id,
                 event_id,
                 event_timestamp_ms,
             )
@@ -309,22 +267,28 @@ async def revenuecat_webhook(request: Request) -> dict:
                 "event_id": event_id,
             }
 
+        resulting_tier = applied.tier or "free"
         log_beta(
             "beta_tier_changed",
             user_id=applied.user_id,
-            new_tier=new_tier,
+            new_tier=resulting_tier,
             event_type=event_type,
         )
         logger.info(
             "tier_changed user_id=%s tier=%s event=%s product_id=%s",
             applied.user_id,
-            new_tier,
+            resulting_tier,
             event_type,
             product_id,
         )
+        action = (
+            "entitlement_remains_pro"
+            if event_type == "EXPIRATION" and resulting_tier == "pro"
+            else f"tier_set_{resulting_tier}"
+        )
         return {
             "ok": True,
-            "action": f"tier_set_{new_tier}",
+            "action": action,
             "user_id": applied.user_id,
         }
 
