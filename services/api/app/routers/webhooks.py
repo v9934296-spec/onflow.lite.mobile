@@ -10,6 +10,10 @@ from fastapi import APIRouter, HTTPException, Request
 from app.core.config import get_settings
 from app.core.rate_limit import limiter, remote_ip_key, webhook_limit_per_minute
 from app.services.beta_observability import log_beta
+from app.services.revenuecat_events import (
+    apply_revenuecat_mutation,
+    record_revenuecat_noop,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +123,10 @@ def _tier_for_subscription_product(product_id: str, settings) -> str | None:
     return None
 
 
+def _duplicate_response(event_id: str) -> dict:
+    return {"ok": True, "action": "duplicate_event_ignored", "event_id": event_id}
+
+
 @router.post("/revenuecat")
 @limiter.limit(webhook_limit_per_minute, key_func=remote_ip_key)
 async def revenuecat_webhook(request: Request) -> dict:
@@ -166,42 +174,57 @@ async def revenuecat_webhook(request: Request) -> dict:
             rc_app_user_id,
         )
 
-    db = request.app.state.db
-    if not db.try_record_rc_webhook_event(event_id):
-        return {"ok": True, "action": "duplicate_event_ignored", "event_id": event_id}
-
-    user_id = rc_app_user_id
-    if not db.user_exists(user_id):
-        attrs = event.get("subscriber_attributes")
-        onflow_uid = _subscriber_attr_value(attrs, "onflow_user_id")
-        if onflow_uid and db.user_exists(onflow_uid):
-            user_id = onflow_uid
+    attrs = event.get("subscriber_attributes")
+    onflow_uid = _subscriber_attr_value(attrs, "onflow_user_id")
+    candidate_user_ids = [rc_app_user_id]
+    if onflow_uid:
+        candidate_user_ids.append(onflow_uid)
 
     settings = get_settings()
     reup_ids = _reup_product_ids(settings)
 
     if event_type in _PRO_EVENTS and product_id in reup_ids:
-        if not db.user_exists(user_id):
-            return {"ok": True, "action": "ignored_unknown_user_reup", "user_id": user_id}
-        total = db.add_bonus_analyses(user_id, 3)
+        applied = apply_revenuecat_mutation(
+            event_id=event_id,
+            candidate_user_ids=candidate_user_ids,
+            rc_customer_id=rc_app_user_id,
+            bonus_delta=3,
+        )
+        if applied.duplicate:
+            return _duplicate_response(event_id)
+        if applied.user_id is None:
+            return {
+                "ok": True,
+                "action": "ignored_unknown_user_reup",
+                "user_id": rc_app_user_id,
+            }
+
+        total = int(applied.bonus_total or 0)
         log_beta(
             "beta_reup_pack_credited",
-            user_id=user_id,
+            user_id=applied.user_id,
             product_id=product_id,
             bonus_total=total,
         )
         logger.info(
             "reup_bonus user_id=%s product_id=%s bonus_total=%s",
-            user_id,
+            applied.user_id,
             product_id,
             total,
         )
-        return {"ok": True, "action": "reup_bonus_added", "user_id": user_id, "bonus_analyses": total}
+        return {
+            "ok": True,
+            "action": "reup_bonus_added",
+            "user_id": applied.user_id,
+            "bonus_analyses": total,
+        }
 
     new_tier: str | None = None
     if event_type in _PRO_EVENTS:
         new_tier = _tier_for_subscription_product(product_id, settings)
         if new_tier is None:
+            # Do not consume the event id. A corrected product allowlist can safely
+            # replay the original RevenueCat event.
             return {
                 "ok": True,
                 "action": "ignored_unknown_product",
@@ -211,26 +234,47 @@ async def revenuecat_webhook(request: Request) -> dict:
         new_tier = "free"
 
     if new_tier:
-        db.set_user_tier(user_id, new_tier, rc_customer_id=rc_app_user_id)
+        applied = apply_revenuecat_mutation(
+            event_id=event_id,
+            candidate_user_ids=candidate_user_ids,
+            rc_customer_id=rc_app_user_id,
+            new_tier=new_tier,
+        )
+        if applied.duplicate:
+            return _duplicate_response(event_id)
+        if applied.user_id is None:
+            return {
+                "ok": True,
+                "action": "ignored_unknown_user_subscription",
+                "user_id": rc_app_user_id,
+            }
+
         log_beta(
             "beta_tier_changed",
-            user_id=user_id,
+            user_id=applied.user_id,
             new_tier=new_tier,
             event_type=event_type,
         )
         logger.info(
             "tier_changed user_id=%s tier=%s event=%s product_id=%s",
-            user_id,
+            applied.user_id,
             new_tier,
             event_type,
             product_id,
         )
-        return {"ok": True, "action": f"tier_set_{new_tier}", "user_id": user_id}
+        return {
+            "ok": True,
+            "action": f"tier_set_{new_tier}",
+            "user_id": applied.user_id,
+        }
+
+    if not record_revenuecat_noop(event_id):
+        return _duplicate_response(event_id)
 
     if event_type in _ACKNOWLEDGED_LIFECYCLE_EVENTS:
         logger.info(
             "lifecycle_event_acknowledged user_id=%s event=%s product_id=%s (no tier change)",
-            user_id,
+            rc_app_user_id,
             event_type,
             product_id,
         )
