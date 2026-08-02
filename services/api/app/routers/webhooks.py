@@ -40,7 +40,6 @@ _ACKNOWLEDGED_LIFECYCLE_EVENTS = frozenset(
         "PRODUCT_CHANGE",
         "BILLING_ISSUE",
         "SUBSCRIBER_ALIAS",
-        "TRANSFER",
     }
 )
 
@@ -131,6 +130,27 @@ def _raise_unknown_user_retry(event_type: str, rc_app_user_id: str) -> None:
     )
 
 
+def _raise_transfer_reconciliation_required(event: dict) -> None:
+    """Fail closed until the backend can fetch authoritative subscriber state.
+
+    TRANSFER events move all entitlements between users and do not carry the
+    normal per-product fields required by the event-state reducer below. Returning
+    2xx would silently leave one or both accounts with incorrect paid access.
+    """
+    logger.error(
+        "RevenueCat TRANSFER requires authoritative reconciliation transferred_from=%s transferred_to=%s",
+        event.get("transferred_from"),
+        event.get("transferred_to"),
+    )
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "RevenueCat transfer requires authoritative subscriber reconciliation; "
+            "retry this webhook after reconciliation is configured."
+        ),
+    )
+
+
 @router.post("/revenuecat")
 @limiter.limit(webhook_limit_per_minute, key_func=remote_ip_key)
 async def revenuecat_webhook(request: Request) -> dict:
@@ -154,7 +174,7 @@ async def revenuecat_webhook(request: Request) -> dict:
     event_id = str(event.get("id") or "").strip()
     event_timestamp_ms = _event_int(event, "event_timestamp_ms")
 
-    if not event_type or not rc_app_user_id:
+    if not event_type:
         return {"ok": True, "action": "ignored_missing_fields"}
     if not event_id:
         logger.warning(
@@ -162,6 +182,10 @@ async def revenuecat_webhook(request: Request) -> dict:
             event_type,
         )
         return {"ok": True, "action": "ignored_missing_event_id"}
+    if event_type == "TRANSFER":
+        _raise_transfer_reconciliation_required(event)
+    if not rc_app_user_id:
+        return {"ok": True, "action": "ignored_missing_fields"}
 
     if event_type == "INITIAL_PURCHASE":
         logger.info(
