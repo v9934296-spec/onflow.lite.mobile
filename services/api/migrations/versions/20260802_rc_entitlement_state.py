@@ -1,4 +1,4 @@
-"""Add RevenueCat entitlement ordering state.
+"""Add RevenueCat per-product entitlement ordering state.
 
 Revision ID: 20260802_rc_entitlement_state
 Revises: 20260717_session_attempts
@@ -24,9 +24,7 @@ def upgrade() -> None:
     op.create_table(
         "rc_entitlement_state",
         sa.Column("user_id", sa.String(length=64), primary_key=True),
-        sa.Column("last_event_timestamp_ms", sa.BigInteger(), nullable=True),
-        sa.Column("last_event_id", sa.String(length=256), nullable=True),
-        sa.Column("last_tier", sa.String(length=16), nullable=True),
+        sa.Column("product_states_json", sa.Text(), nullable=False, server_default="{}"),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
