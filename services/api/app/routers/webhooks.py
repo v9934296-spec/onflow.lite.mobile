@@ -256,10 +256,9 @@ async def revenuecat_webhook(request: Request) -> dict:
         entitlement_active = True
     elif event_type in _FREE_EVENTS:
         if product_id not in pro_ids:
-            # An unrelated product in the same RevenueCat project cannot affect the
-            # OnFlow entitlement. Deduplicate the no-op normally.
-            if not record_revenuecat_noop(event_id):
-                return _duplicate_response(event_id)
+            # Leave the event replayable too: this may be a truly unrelated product,
+            # or it may expose a temporarily incomplete allowlist. Either way it
+            # cannot affect OnFlow until explicitly configured as a Pro product.
             return {
                 "ok": True,
                 "action": "ignored_unknown_product",
