@@ -66,6 +66,41 @@ def _subscriber_attr_value(attrs: object, name: str) -> str | None:
     return None
 
 
+def _event_int(event: dict, name: str) -> int | None:
+    raw = event.get(name)
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def _identity_candidates(event: dict, rc_app_user_id: str) -> list[str]:
+    """Return every RevenueCat identity that may map to the OnFlow account.
+
+    RevenueCat explicitly recommends searching ``original_app_user_id`` and the
+    ``aliases`` array in addition to ``app_user_id``. The custom OnFlow subscriber
+    attribute is preferred when present because it is an explicit backend user id.
+    """
+    attrs = event.get("subscriber_attributes")
+    onflow_uid = _subscriber_attr_value(attrs, "onflow_user_id")
+    original = str(event.get("original_app_user_id") or "").strip()
+    aliases = event.get("aliases")
+
+    out: list[str] = []
+    for value in (onflow_uid, rc_app_user_id, original):
+        if value and value not in out:
+            out.append(value)
+    if isinstance(aliases, list):
+        for raw in aliases:
+            value = str(raw or "").strip()
+            if value and value not in out:
+                out.append(value)
+    return out
+
+
 def _verify_webhook_auth(request: Request) -> None:
     settings = get_settings()
     secret = (settings.rc_webhook_secret or "").strip()
@@ -127,6 +162,18 @@ def _duplicate_response(event_id: str) -> dict:
     return {"ok": True, "action": "duplicate_event_ignored", "event_id": event_id}
 
 
+def _raise_unknown_user_retry(event_type: str, rc_app_user_id: str) -> None:
+    logger.warning(
+        "RevenueCat paid event could not resolve user; requesting retry type=%s app_user_id=%s",
+        event_type,
+        rc_app_user_id,
+    )
+    raise HTTPException(
+        status_code=503,
+        detail="RevenueCat user is not linked yet; retry this webhook.",
+    )
+
+
 @router.post("/revenuecat")
 @limiter.limit(webhook_limit_per_minute, key_func=remote_ip_key)
 async def revenuecat_webhook(request: Request) -> dict:
@@ -156,6 +203,7 @@ async def revenuecat_webhook(request: Request) -> dict:
     rc_app_user_id = str(event.get("app_user_id") or "").strip()
     product_id = str(event.get("product_id") or "").strip()
     event_id = str(event.get("id") or "").strip()
+    event_timestamp_ms = _event_int(event, "event_timestamp_ms")
 
     if not event_type or not rc_app_user_id:
         return {"ok": True, "action": "ignored_missing_fields"}
@@ -174,12 +222,7 @@ async def revenuecat_webhook(request: Request) -> dict:
             rc_app_user_id,
         )
 
-    attrs = event.get("subscriber_attributes")
-    onflow_uid = _subscriber_attr_value(attrs, "onflow_user_id")
-    candidate_user_ids = [rc_app_user_id]
-    if onflow_uid:
-        candidate_user_ids.append(onflow_uid)
-
+    candidate_user_ids = _identity_candidates(event, rc_app_user_id)
     settings = get_settings()
     reup_ids = _reup_product_ids(settings)
 
@@ -193,11 +236,7 @@ async def revenuecat_webhook(request: Request) -> dict:
         if applied.duplicate:
             return _duplicate_response(event_id)
         if applied.user_id is None:
-            return {
-                "ok": True,
-                "action": "ignored_unknown_user_reup",
-                "user_id": rc_app_user_id,
-            }
+            _raise_unknown_user_retry(event_type, rc_app_user_id)
 
         total = int(applied.bonus_total or 0)
         log_beta(
@@ -224,13 +263,23 @@ async def revenuecat_webhook(request: Request) -> dict:
         new_tier = _tier_for_subscription_product(product_id, settings)
         if new_tier is None:
             # Do not consume the event id. A corrected product allowlist can safely
-            # replay the original RevenueCat event.
+            # replay the original RevenueCat event from the dashboard.
             return {
                 "ok": True,
                 "action": "ignored_unknown_product",
                 "product_id": product_id,
             }
     elif event_type in _FREE_EVENTS:
+        # An expiration for an unrelated product in the same RevenueCat project
+        # must never revoke OnFlow Pro.
+        if product_id not in _pro_product_ids(settings):
+            if not record_revenuecat_noop(event_id):
+                return _duplicate_response(event_id)
+            return {
+                "ok": True,
+                "action": "ignored_unknown_product",
+                "product_id": product_id,
+            }
         new_tier = "free"
 
     if new_tier:
@@ -239,14 +288,25 @@ async def revenuecat_webhook(request: Request) -> dict:
             candidate_user_ids=candidate_user_ids,
             rc_customer_id=rc_app_user_id,
             new_tier=new_tier,
+            event_timestamp_ms=event_timestamp_ms,
         )
         if applied.duplicate:
             return _duplicate_response(event_id)
         if applied.user_id is None:
+            _raise_unknown_user_retry(event_type, rc_app_user_id)
+        if applied.stale:
+            logger.info(
+                "stale_revenuecat_event_ignored user_id=%s event=%s event_id=%s timestamp_ms=%s",
+                applied.user_id,
+                event_type,
+                event_id,
+                event_timestamp_ms,
+            )
             return {
                 "ok": True,
-                "action": "ignored_unknown_user_subscription",
-                "user_id": rc_app_user_id,
+                "action": "stale_event_ignored",
+                "user_id": applied.user_id,
+                "event_id": event_id,
             }
 
         log_beta(
