@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import BigInteger, Column, DateTime
 from sqlmodel import Field, SQLModel
 
 
@@ -27,7 +28,13 @@ class RcEntitlementStateModel(SQLModel, table=True):
     __tablename__ = "rc_entitlement_state"
 
     user_id: str = Field(primary_key=True, max_length=64)
-    last_event_timestamp_ms: Optional[int] = Field(default=None)
+    last_event_timestamp_ms: Optional[int] = Field(
+        default=None,
+        sa_column=Column(BigInteger, nullable=True),
+    )
     last_event_id: Optional[str] = Field(default=None, max_length=256)
     last_tier: Optional[str] = Field(default=None, max_length=16)
-    updated_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
