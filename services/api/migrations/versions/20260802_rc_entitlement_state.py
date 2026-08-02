@@ -28,6 +28,7 @@ def upgrade() -> None:
         sa.Column("last_event_id", sa.String(length=256), nullable=True),
         sa.Column("last_tier", sa.String(length=16), nullable=True),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
 
 
