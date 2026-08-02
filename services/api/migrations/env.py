@@ -1,4 +1,4 @@
-"""Alembic environment — SQLModel metadata from ``app.models``."""
+"""Alembic environment — SQLModel metadata from application models."""
 from __future__ import annotations
 
 import os
@@ -24,12 +24,14 @@ from app.models import (  # noqa: F401
     LineAttemptModel,
     MilestoneModel,
     RcWebhookDedupModel,
+    SessionAttemptModel,
     SessionModel,
     SkateSessionModel,
     SubscriptionEventModel,
     TrickStatModel,
     UserModel,
 )
+from app.models_revenuecat import RcEntitlementStateModel  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
