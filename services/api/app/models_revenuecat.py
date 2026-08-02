@@ -7,9 +7,8 @@ explicit billing concern rather than another field cluster on ``users``.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text
 from sqlmodel import Field, SQLModel
 
 
@@ -18,11 +17,13 @@ def _utcnow() -> datetime:
 
 
 class RcEntitlementStateModel(SQLModel, table=True):
-    """Latest entitlement mutation applied for one OnFlow user.
+    """Per-product RevenueCat entitlement state for one OnFlow user.
 
-    RevenueCat delivers webhooks at least once and network delivery can be out of
-    order. This row is locked together with the user row so an older expiration
-    cannot overwrite a newer purchase or renewal.
+    The JSON object is keyed by Store product id. Each entry stores whether that
+    product is currently active plus the RevenueCat event timestamp and event id
+    that established the state. Keeping all products under one user-owned row
+    lets the webhook lock once, order each product independently, and preserve Pro
+    while any configured Pro product remains active.
     """
 
     __tablename__ = "rc_entitlement_state"
@@ -34,12 +35,10 @@ class RcEntitlementStateModel(SQLModel, table=True):
             primary_key=True,
         )
     )
-    last_event_timestamp_ms: Optional[int] = Field(
-        default=None,
-        sa_column=Column(BigInteger, nullable=True),
+    product_states_json: str = Field(
+        default="{}",
+        sa_column=Column(Text, nullable=False),
     )
-    last_event_id: Optional[str] = Field(default=None, max_length=256)
-    last_tier: Optional[str] = Field(default=None, max_length=16)
     updated_at: datetime = Field(
         default_factory=_utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
