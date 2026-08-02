@@ -59,6 +59,7 @@ def create_db_tables() -> None:
         TrickStatModel,
         UserModel,
     )
+    from app.models_revenuecat import RcEntitlementStateModel  # noqa: F401
 
     SQLModel.metadata.create_all(get_engine())
     _log.debug("create_db_tables: SQLModel.metadata.create_all completed")
