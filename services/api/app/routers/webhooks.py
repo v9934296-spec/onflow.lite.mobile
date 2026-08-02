@@ -81,7 +81,7 @@ def _identity_candidates(event: dict, rc_app_user_id: str) -> list[str]:
 def _verify_webhook_auth(request: Request) -> None:
     settings = get_settings()
     secret = (settings.rc_webhook_secret or "").strip()
-    if settings.is_production:
+    if settings.is_production_or_staging:
         if not secret:
             raise HTTPException(
                 status_code=401,
@@ -175,10 +175,16 @@ async def revenuecat_webhook(request: Request) -> dict:
     reup_ids = _reup_product_ids(settings)
     pro_ids = _pro_product_ids(settings)
 
-    # Development compatibility: deployed environments are required to configure
-    # the allowlist at startup, while local lifecycle tests can exercise expiration
-    # without reproducing every production environment variable.
-    if not pro_ids and not settings.is_production_or_staging and product_id:
+    if not pro_ids and settings.is_production_or_staging:
+        logger.error("RevenueCat Pro product allowlist is empty in a deployed environment")
+        raise HTTPException(
+            status_code=503,
+            detail="RevenueCat Pro products are not configured; retry this webhook.",
+        )
+
+    # Development compatibility: local lifecycle tests can exercise expiration
+    # without reproducing every deployed environment variable.
+    if not pro_ids and product_id:
         pro_ids = {product_id}
 
     if event_type in _PRO_EVENTS and product_id in reup_ids:
