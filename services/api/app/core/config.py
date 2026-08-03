@@ -150,9 +150,10 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _production_requires_jwt_secret(self) -> "Settings":
-        if self.is_production and not (self.jwt_secret or "").strip():
+        if self.is_production_or_staging and not (self.jwt_secret or "").strip():
             raise ValueError(
-                "ONFLOW_JWT_SECRET must be set when ONFLOW_ENV is production or prod."
+                "ONFLOW_JWT_SECRET must be set when ONFLOW_ENV is "
+                "production, prod, or staging."
             )
         if self.is_production and not (self.database_url or "").strip():
             # SQLite cannot handle concurrent writers across API workers + ARQ + webhooks;
@@ -165,6 +166,21 @@ class Settings(BaseSettings):
             raise ValueError(
                 "ONFLOW_ADMIN_EMAILS must be set when ONFLOW_ENV is "
                 "production, prod, or staging."
+            )
+        if self.is_production_or_staging and not (self.rc_webhook_secret or "").strip():
+            raise ValueError(
+                "ONFLOW_RC_WEBHOOK_SECRET must be set when ONFLOW_ENV is "
+                "production, prod, or staging."
+            )
+        if self.is_production_or_staging and not (self.rc_pro_product_ids or "").strip():
+            raise ValueError(
+                "ONFLOW_RC_PRO_PRODUCT_IDS must be set when ONFLOW_ENV is "
+                "production, prod, or staging (comma-separated Store product IDs)."
+            )
+        if self.is_production_or_staging and (self.cors_origins or "").strip() == "*":
+            raise ValueError(
+                "ONFLOW_CORS_ORIGINS=* is not allowed when ONFLOW_ENV is "
+                "production, prod, or staging. Set explicit origins."
             )
         if (self.admin_emails or "").strip():
             from app.core.admin import parse_admin_emails_strict

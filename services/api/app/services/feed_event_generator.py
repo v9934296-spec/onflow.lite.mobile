@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
-from app.models import ClipModel, FeedEventModel, SkateSessionModel
+from app.models import ClipModel, FeedEventModel, SessionAttemptModel, SkateSessionModel
 from app.services.trick_registry import normalize_trick_name
 
 SESSION_RECAP_VERSION = "feed_1.0.0"
@@ -80,7 +80,11 @@ def generate_session_recap_feed_event(
         ClipModel.deleted_at.is_(None),  # type: ignore[union-attr]
     )
     clip_count = int(db.exec(clip_stmt).one())
-    attempt_count = clip_count
+    attempt_stmt = select(func.count(SessionAttemptModel.id)).where(
+        SessionAttemptModel.session_id == session_id,
+        SessionAttemptModel.deleted_at.is_(None),  # type: ignore[union-attr]
+    )
+    attempt_count = int(db.exec(attempt_stmt).one())
     breakthrough_note = (row.breakthrough_note or "").strip() or None
     breakthrough_count = 1 if breakthrough_note else 0
     completed_at = row.ended_at or datetime.now(timezone.utc)

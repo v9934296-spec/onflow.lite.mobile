@@ -121,6 +121,7 @@ export default function SessionHistory() {
                   <Text style={s.rowSub}>
                     {formatDate(item.ended_at)}
                     {item.best_pte_score != null ? ` · PTE ${item.best_pte_score}` : ""}
+                    {item.attempt_count ? ` · ${item.attempt_count} attempts` : ""}
                     {item.clips_count ? ` · ${item.clips_count} clips` : ""}
                   </Text>
                 </View>

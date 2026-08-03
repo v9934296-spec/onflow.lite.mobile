@@ -1,0 +1,58 @@
+# Migration Tracker
+
+## Definition: feature migrated
+
+A feature is **not** migrated because the code compiles.
+
+A feature is migrated only when **all** of the following are true:
+
+- It works in the new app on a real device.
+- It handles loading, empty, success, and failure states.
+- Its tests pass.
+- Placeholder data/code in the core path has been replaced.
+- It has been committed as a stable checkpoint.
+
+## Feature migration checklist
+
+Use for every migrated feature:
+
+```
+[ ] Source feature located in ai-pop
+[ ] Required files identified
+[ ] Required dependencies identified
+[ ] Deprecated code excluded
+[ ] New project architecture preserved
+[ ] Types migrated or rewritten
+[ ] API calls connected
+[ ] Loading state implemented
+[ ] Empty state implemented
+[ ] Error state implemented
+[ ] Success state implemented
+[ ] Unit tests passing
+[ ] Smoke/bundle checks passing
+[ ] Real-device test passing
+[ ] Placeholder replaced
+[ ] Dead code removed
+[ ] Feature committed
+[ ] Commit pushed
+```
+
+## Status table
+
+| Order | Feature | Status | Device Tested | Tests Passing | Commit |
+| ----- | ----------------------------- | ---------------------: | ------------: | ------------: | ------ |
+| 0 | Migration baseline | Complete | No | Yes | `b9c4eaa` |
+| 1 | API client and environment | Complete | Yes | Yes (66) | `f6bc3a4` |
+| 2 | Authentication and user state | Complete | Yes | Yes (74) | `c76b24a` |
+| 3 | Session creation | Complete | Yes | Yes (89) | `d57b2cf` |
+| 4 | Trick catalog and picker | Complete | Yes | Yes (100) | `12c6596` |
+| 5 | Attempt logging | Complete | Yes | Yes (111) | `eaa71e8` |
+| 6 | End-session recap | Complete | Yes | Yes (111) | `30579af` |
+| 7 | Session history | Complete | Yes | Yes (118) | `f4f542b` |
+| 8 | Clip selection and upload | Complete | Yes | Yes (132) | `e900950` |
+| 9 | Analysis job status | Complete | Yes | Yes (132) | `e900950` |
+| 10 | Feed and social features | Complete | Pending manual | Yes (143) | `4f44a01` |
+| 11 | Subscriptions and paywall | Complete | Pending manual | Yes (143) | `4f44a01` |
+| 12 | Notifications and polish | Complete | Pending manual | Yes (143) | `4f44a01` |
+
+Update this table after each completed feature commit.

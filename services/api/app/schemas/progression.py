@@ -17,6 +17,7 @@ class ProgressionTimelineItem(BaseModel):
     focus_trick: str | None = None
     duration_seconds: int | None = None
     clips_count: int = 0
+    attempt_count: int = 0
     best_pte_score: float | None = None
     thumbnail_url: str | None = None
 

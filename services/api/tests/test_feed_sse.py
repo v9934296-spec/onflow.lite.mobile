@@ -25,6 +25,43 @@ def test_feed_stream_requires_auth(client: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_feed_stream_rejects_session_jwt_in_query(authed_client: TestClient) -> None:
+    """Long-lived access tokens must not be accepted via ?token=."""
+    bearer = authed_client.headers.get("Authorization", "")
+    assert bearer.lower().startswith("bearer ")
+    session_token = bearer.split(" ", 1)[1]
+    r = TestClient(authed_client.app).get(
+        "/api/v1/feed/stream",
+        params={"token": session_token},
+        headers={"Accept": "text/event-stream"},
+    )
+    assert r.status_code == 401
+    detail = str(r.json().get("detail", "")).lower()
+    assert "sse" in detail or "ticket" in detail
+
+
+def test_feed_sse_ticket_mints_query_token(authed_client: TestClient) -> None:
+    from types import SimpleNamespace
+
+    from app.core.auth import resolve_sse_query_token, resolve_user_id_from_token
+    from fastapi import HTTPException
+
+    ticket = authed_client.post("/api/v1/feed/sse-ticket")
+    assert ticket.status_code == 200, ticket.text
+    body = ticket.json()
+    assert body["token_type"] == "sse"
+    assert body["expires_in"] == 300
+    assert body["token"]
+
+    request = SimpleNamespace(app=SimpleNamespace(state=authed_client.app.state))
+    assert resolve_sse_query_token(request, body["token"]) == "test-user-001"
+
+    # Short-lived SSE tickets must not authenticate ordinary REST Bearer routes.
+    with pytest.raises(HTTPException) as exc:
+        resolve_user_id_from_token(request, body["token"])
+    assert exc.value.status_code == 401
+
+
 def test_feed_sse_hub_heartbeat_format() -> None:
     reset_feed_sse_hub()
     hub = get_feed_sse_hub()

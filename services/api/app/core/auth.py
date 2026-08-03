@@ -24,10 +24,10 @@ def issue_onflow_access_token(user_id: str) -> str:
     settings = get_settings()
     secret = settings.jwt_secret.strip()
     if not secret:
-        if settings.is_production:
+        if settings.is_production_or_staging:
             raise HTTPException(
                 status_code=500,
-                detail="Server misconfiguration: JWT signing is required in production.",
+                detail="Server misconfiguration: JWT signing is required in production/staging.",
             )
         logger.warning("ONFLOW_JWT_SECRET not set — returning unsigned dev token")
         return f"dev:{user_id}"
@@ -37,6 +37,64 @@ def issue_onflow_access_token(user_id: str) -> str:
         "exp": datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expiry_hours),
     }
     return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def issue_sse_access_token(user_id: str, *, ttl_seconds: int = 300) -> str:
+    """Short-lived JWT for EventSource ``?token=`` only (``purpose=sse``)."""
+    settings = get_settings()
+    secret = settings.jwt_secret.strip()
+    ttl = max(60, min(int(ttl_seconds), 900))
+    if not secret:
+        if settings.is_production_or_staging:
+            raise HTTPException(
+                status_code=500,
+                detail="Server misconfiguration: JWT signing is required in production/staging.",
+            )
+        return f"dev-sse:{user_id}"
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "purpose": "sse",
+        "iat": now,
+        "exp": now + timedelta(seconds=ttl),
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def resolve_sse_query_token(request: Request, token: str) -> str:
+    """Accept only short-lived SSE tickets in the query string — never session JWTs."""
+    settings = get_settings()
+    cleaned = token.strip()
+    if not cleaned:
+        raise HTTPException(status_code=401, detail="Missing SSE stream ticket.")
+
+    if cleaned.startswith("dev-sse:"):
+        if settings.is_production_or_staging:
+            raise HTTPException(status_code=401, detail="Invalid SSE stream ticket.")
+        return cleaned[len("dev-sse:") :]
+
+    secret = settings.jwt_secret.strip()
+    if not secret:
+        raise HTTPException(status_code=401, detail="Invalid SSE stream ticket.")
+    try:
+        payload = jwt.decode(cleaned, secret, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="SSE stream ticket expired.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid SSE stream ticket.")
+    if payload.get("purpose") != "sse":
+        raise HTTPException(
+            status_code=401,
+            detail="Use POST /api/v1/feed/sse-ticket for EventSource ?token= auth.",
+        )
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid SSE stream ticket.")
+    uid = str(user_id)
+    row = request.app.state.db.get_user(uid)
+    if row and row.tokens_invalidated_at is not None:
+        raise HTTPException(status_code=401, detail="Session revoked — sign in again.")
+    return uid
 
 
 def resolve_user_id_from_token(request: Request, token: str) -> str:
@@ -58,6 +116,11 @@ def resolve_user_id_from_token(request: Request, token: str) -> str:
     if secret:
         try:
             payload = jwt.decode(cleaned, secret, algorithms=["HS256"])
+            if payload.get("purpose") == "sse":
+                raise HTTPException(
+                    status_code=401,
+                    detail="SSE stream tickets cannot be used as Bearer session tokens.",
+                )
             user_id = payload.get("sub")
             if not user_id:
                 raise HTTPException(status_code=401, detail="Invalid token payload.")
@@ -86,7 +149,7 @@ def resolve_user_id_from_token(request: Request, token: str) -> str:
             raise HTTPException(status_code=401, detail="Invalid token.")
 
     if cleaned.startswith("dev:"):
-        if settings.is_production:
+        if settings.is_production_or_staging:
             raise HTTPException(
                 status_code=401,
                 detail="Invalid or unknown session. Sign in again from the app.",
@@ -121,11 +184,11 @@ def get_current_user_sse(
     token: str | None = Query(default=None),
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> str:
-    """SSE auth: Bearer header or ``?token=`` query param (EventSource-friendly)."""
+    """SSE auth: Bearer header, or short-lived ``?token=`` from ``/feed/sse-ticket``."""
     if creds and creds.credentials.strip():
         return resolve_user_id_from_token(request, creds.credentials)
     if token and token.strip():
-        return resolve_user_id_from_token(request, token)
+        return resolve_sse_query_token(request, token)
     raise HTTPException(
         status_code=401,
         detail="Sign in again — missing session. Use POST /api/v1/auth/session first.",

@@ -19,6 +19,7 @@ import { useAccount } from "../auth/accountContext";
 import { useAuth } from "../auth/authContext";
 import { buildSessionRecap } from "../sessionRecap/buildSessionRecap";
 import { saveCompletedSessionRecap } from "../sessionRecap/completedSessionStore";
+import { flushAttemptOutbox } from "../sessionAttempts/attemptOutbox";
 import { loadSessionAttempts } from "../sessionAttempts/sessionAttemptStore";
 import type { SkateSession } from "../types/api/session";
 import { isSkateSessionActive } from "../types/api/session";
@@ -272,6 +273,15 @@ export function SkateSessionProvider({ children }: { children: React.ReactNode }
       if (!journalResult.ok) {
         setEndError(journalResult.error);
         return { ok: false, error: journalResult.error };
+      }
+
+      // Sync attempts before ending so feed/recap see real attempt counts.
+      const flush = await flushAttemptOutbox();
+      if (flush.error || flush.remaining > 0) {
+        const message =
+          flush.error ?? "Some attempts are still pending sync. Try again when online.";
+        setEndError(message);
+        return { ok: false, error: message };
       }
 
       const updateResult = await updateSkateSession(sessionId, { ended_at: endedAt });

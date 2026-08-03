@@ -137,7 +137,7 @@ def test_pte_aggregates_when_present(authed_client: TestClient) -> None:
     assert body["best_pte_score"] == 8
     assert body["average_pte_score"] == 6.3
     assert body["clips_count"] == 3
-    assert body["attempts_count"] == 3
+    assert body["attempts_count"] == 0
 
 
 def test_missing_pte_returns_null(authed_client: TestClient) -> None:
@@ -199,3 +199,46 @@ def test_clip_fields_round_trip(authed_client: TestClient) -> None:
     assert clip["pte_score"] == 7
     assert clip["trick"] is not None
     assert clip["stance"] is None  # no per-clip stance in V1
+
+
+def test_attempts_count_from_synced_attempts_not_clips(authed_client: TestClient) -> None:
+    sid = _create_session(authed_client)
+    for _ in range(2):
+        _insert_clip(sid, "test-user-001", pte=6)
+    sync = authed_client.post(
+        "/api/v1/session-attempts/sync",
+        json={
+            "attempts": [
+                {
+                    "id": "recap-a1",
+                    "session_id": sid,
+                    "trick_id": "kickflip",
+                    "canonical_name": "Kickflip",
+                    "outcome": "landed",
+                    "logged_at": "2026-07-17T12:00:00Z",
+                },
+                {
+                    "id": "recap-a2",
+                    "session_id": sid,
+                    "trick_id": "kickflip",
+                    "canonical_name": "Kickflip",
+                    "outcome": "missed",
+                    "logged_at": "2026-07-17T12:01:00Z",
+                },
+                {
+                    "id": "recap-a3",
+                    "session_id": sid,
+                    "trick_id": "heelflip",
+                    "canonical_name": "Heelflip",
+                    "outcome": "landed",
+                    "logged_at": "2026-07-17T12:02:00Z",
+                },
+            ]
+        },
+    )
+    assert sync.status_code == 200, sync.text
+    body = authed_client.get(f"/api/v1/sessions/{sid}/recap").json()
+    assert body["clips_count"] == 2
+    assert body["attempts_count"] == 3
+    assert body["landed_count"] == 2
+    assert body["landed_rate"] == 0.67

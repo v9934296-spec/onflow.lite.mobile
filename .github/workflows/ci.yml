@@ -124,3 +124,11 @@ jobs:
           file: services/api/Dockerfile
           push: false
           tags: onflow-api:ci
+
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/api/Dockerfile.worker
+          push: false
+          tags: onflow-worker:ci

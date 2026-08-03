@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
+from collections.abc import Mapping
 from collections import defaultdict
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException, Request
 from slowapi import Limiter
@@ -32,6 +34,44 @@ _log = logging.getLogger(__name__)
 
 RateLimitStorage = Literal["redis", "memory"]
 RATE_LIMIT_STORAGE: RateLimitStorage = "memory"
+
+_RETRY_AFTER_UNIT_SECONDS = {
+    "second": 1,
+    "seconds": 1,
+    "minute": 60,
+    "minutes": 60,
+    "hour": 3600,
+    "hours": 3600,
+    "day": 86400,
+    "days": 86400,
+}
+_RETRY_AFTER_RE = re.compile(
+    r"per\s+(\d+)\s+(seconds?|minutes?|hours?|days?)",
+    re.IGNORECASE,
+)
+
+
+def _retry_after_seconds(exc: Any, *, default: int = 60) -> int:
+    """
+    Derive ``Retry-After`` from a slowapi ``RateLimitExceeded`` detail.
+
+    Detail shapes look like ``"5 per 1 minute"`` / ``"100 per 1 day"``. Falls back
+    to ``default`` (60s) instead of always advertising a full day.
+    """
+    detail = getattr(exc, "detail", None)
+    text = ""
+    if isinstance(detail, str):
+        text = detail
+    elif isinstance(detail, Mapping):
+        text = str(detail.get("error") or detail.get("msg") or detail)
+    else:
+        text = str(detail or exc)
+    match = _RETRY_AFTER_RE.search(text)
+    if not match:
+        return max(1, int(default))
+    window = int(match.group(1))
+    unit = match.group(2).lower()
+    return max(1, window * _RETRY_AFTER_UNIT_SECONDS[unit])
 
 # --- Key helpers (prefer named functions over inline lambdas) ---
 

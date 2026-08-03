@@ -170,7 +170,10 @@ export async function completeSessionClipUpload(clipId: string): Promise<ApiResu
   return { ok: true, data: undefined, status: res.status };
 }
 
-/** Initiate → presigned PUT → complete-upload. Returns clip id (job id in v1 pipeline). */
+/**
+ * Initiate → presigned PUT → complete-upload.
+ * Returns clip id; the analysis job exists only after complete-upload succeeds.
+ */
 export async function uploadClipToSession(params: UploadClipParams): Promise<ApiResult<string>> {
   const contentType: "video/mp4" | "video/quicktime" =
     params.mimeType === "video/quicktime" ? "video/quicktime" : "video/mp4";

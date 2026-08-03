@@ -263,6 +263,51 @@ def _sync_v1_clip_terminal(
     sync_v1_clip_from_job_result(job_id, result, failed=failed)
 
 
+def _persist_claimed(repo: ClipJobRepository, job: Any, *, claim_token: str | None) -> bool:
+    """Write terminal/in-flight job state only while ``claim_token`` still owns it."""
+    if not claim_token:
+        repo.update(job)
+        return True
+    update_claimed = getattr(repo, "update_claimed", None)
+    if callable(update_claimed):
+        ok = bool(update_claimed(job, claim_token=claim_token))
+        if not ok:
+            logger.warning(
+                "event=clip_job_update_rejected reason=lost_claim job_id=%s",
+                getattr(job, "id", ""),
+            )
+        return ok
+    repo.update(job)
+    return True
+
+
+async def _lease_heartbeat(
+    repo: ClipJobRepository,
+    *,
+    job_id: str,
+    claim_token: str,
+    stop: asyncio.Event,
+) -> None:
+    """Extend lease while analysis runs so reclaim cannot steal a live worker."""
+    renew = getattr(repo, "renew_lease", None)
+    if not callable(renew):
+        return
+    lease_seconds = max(1, int(get_settings().arq_job_timeout))
+    interval = max(15, lease_seconds // 3)
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+            return
+        except asyncio.TimeoutError:
+            ok = renew(job_id, claim_token=claim_token, lease_seconds=lease_seconds)
+            if not ok:
+                logger.warning(
+                    "event=clip_job_lease_renew_failed job_id=%s",
+                    job_id,
+                )
+                return
+
+
 async def finalize_completed_clip_job(
     *,
     job: Any,
@@ -278,6 +323,7 @@ async def finalize_completed_clip_job(
     engine: Any,
     t_job_start: float,
     degraded: bool = False,
+    claim_token: str | None = None,
 ) -> None:
     """
     Shared post-analysis path: playback hints, stats/recap, persist completed job,
@@ -309,8 +355,13 @@ async def finalize_completed_clip_job(
         job_id=job_id,
         tricks_raw=tricks_list,
     )
+    token = claim_token or getattr(job, "claim_token", None)
     job.with_status("completed", result_json=result)
-    repo.update(job)
+    if not _persist_claimed(repo, job, claim_token=token):
+        await _cleanup_upload(
+            file_path, storage_key, skip_remote_delete=skip_remote_storage_delete
+        )
+        return
     _sync_v1_clip_terminal(job_id, failed=False, result=result)
 
     elapsed_ms = int((time.perf_counter() - t_job_start) * 1000)
@@ -388,6 +439,9 @@ async def run_clip_job(
     from app.core.database import get_engine
     engine = get_engine()
     t_job = time.perf_counter()
+    claim_token: str | None = None
+    lease_stop: asyncio.Event | None = None
+    lease_task: asyncio.Task[None] | None = None
     try:
         # CAS claim pending → processing so concurrent ARQ deliveries do not
         # both run Gemini. Terminal / lost-claim returns None (skip).
@@ -397,7 +451,9 @@ async def run_clip_job(
         else:
             job = repo.get(job_id)
             if job is not None and job.status not in ("completed", "failed"):
-                job.with_status("processing")
+                from app.core.config import get_settings as _gs
+
+                job.take_lease(lease_seconds=max(1, int(_gs().arq_job_timeout)))
                 repo.update(job)
 
         if job is None:
@@ -410,6 +466,18 @@ async def run_clip_job(
                     existing.status,
                 )
             return
+
+        claim_token = getattr(job, "claim_token", None)
+        if claim_token:
+            lease_stop = asyncio.Event()
+            lease_task = asyncio.create_task(
+                _lease_heartbeat(
+                    repo,
+                    job_id=job_id,
+                    claim_token=claim_token,
+                    stop=lease_stop,
+                )
+            )
 
         logger.info(
             "event=clip_job_started path_tail=%s",
@@ -439,8 +507,8 @@ async def run_clip_job(
                 or not looks_like_video(file_path)
             ):
                 job.with_status("failed", failure_reason=FAILURE_VIDEO_UNREADABLE)
-                repo.update(job)
-                _sync_v1_clip_terminal(job_id, failed=True)
+                if _persist_claimed(repo, job, claim_token=claim_token):
+                    _sync_v1_clip_terminal(job_id, failed=True)
                 log_beta(
                     "beta_job_failed",
                     job_id=job_id,
@@ -461,8 +529,8 @@ async def run_clip_job(
 
             if not first.get("video_readable"):
                 job.with_status("failed", failure_reason=FAILURE_VIDEO_UNREADABLE)
-                repo.update(job)
-                _sync_v1_clip_terminal(job_id, failed=True)
+                if _persist_claimed(repo, job, claim_token=claim_token):
+                    _sync_v1_clip_terminal(job_id, failed=True)
                 log_beta(
                     "beta_job_failed",
                     job_id=job_id,
@@ -557,6 +625,7 @@ async def run_clip_job(
                         engine=engine,
                         t_job_start=t_job,
                         degraded=True,
+                        claim_token=claim_token,
                     )
                     return
 
@@ -602,6 +671,7 @@ async def run_clip_job(
                         engine=engine,
                         t_job_start=t_job,
                         degraded=True,
+                        claim_token=claim_token,
                     )
                     return
 
@@ -735,16 +805,24 @@ async def run_clip_job(
                 engine=engine,
                 t_job_start=t_job,
                 degraded=False,
+                claim_token=claim_token,
             )
         except Exception:
             logger.exception("event=clip_job_failed reason=internal_error")
             job.with_status("failed", failure_reason="internal_error")
-            repo.update(job)
-            _sync_v1_clip_terminal(job_id, failed=True)
+            if _persist_claimed(repo, job, claim_token=claim_token):
+                _sync_v1_clip_terminal(job_id, failed=True)
             log_beta("beta_job_failed", job_id=job_id, failure_reason="internal_error")
             logger.info("event=clip_job_failed failure_reason=internal_error")
             await _cleanup_upload(file_path, storage_key)
     finally:
+        if lease_stop is not None:
+            lease_stop.set()
+        if lease_task is not None:
+            try:
+                await lease_task
+            except Exception:
+                logger.debug("lease heartbeat task ended with error", exc_info=True)
         structlog.contextvars.unbind_contextvars("job_id")
 
 

@@ -214,6 +214,7 @@ export default function FlowScreen() {
                       })
                     : "Recent"}
                   {lastRecap.best_pte_score != null ? ` · PTE ${lastRecap.best_pte_score}` : ""}
+                  {lastRecap.attempt_count ? ` · ${lastRecap.attempt_count} attempts` : ""}
                   {lastRecap.clips_count ? ` · ${lastRecap.clips_count} clips` : ""}
                 </Text>
               </Card>

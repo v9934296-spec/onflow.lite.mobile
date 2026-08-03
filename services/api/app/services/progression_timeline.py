@@ -1,7 +1,7 @@
 """Progression timeline aggregation (Step 5F).
 
 Owner-scoped, offset-paginated list of a skater's completed sessions, newest-first.
-Reuses the existing session/clip tables — no schema changes. Each entry is a
+Reuses the existing session/clip/attempt tables — no schema changes. Each entry is a
 lightweight preview (the full recap lives behind the 5E recap-detail endpoint).
 
 Ordering: **newest-first** by ``ended_at`` (tie-break ``id`` descending).
@@ -11,20 +11,25 @@ from __future__ import annotations
 
 from sqlmodel import Session, func, select
 
-from app.models import ClipModel, SkateSessionModel
+from app.models import ClipModel, SessionAttemptModel, SkateSessionModel
 from app.schemas.progression import ProgressionTimelineItem
 from app.services.clip_upload import iso_z
 
 
 def _timeline_aggregates(
     db: Session, session_ids: list[str]
-) -> tuple[dict[str, int], dict[str, float], dict[str, str]]:
-    """Batch per-session preview metrics in 3 grouped queries (avoids N+1 over clips).
+) -> tuple[dict[str, int], dict[str, int], dict[str, float], dict[str, str]]:
+    """Batch per-session preview metrics (avoids N+1).
 
-    Returns (clips_count_by_session, best_pte_by_session, latest_thumbnail_by_session).
+    Returns (
+        clips_count_by_session,
+        attempt_count_by_session,
+        best_pte_by_session,
+        latest_thumbnail_by_session,
+    ).
     """
     if not session_ids:
-        return {}, {}, {}
+        return {}, {}, {}, {}
 
     count_rows = db.exec(
         select(ClipModel.session_id, func.count(ClipModel.id))
@@ -35,6 +40,16 @@ def _timeline_aggregates(
         .group_by(ClipModel.session_id)
     ).all()
     counts = {sid: int(c) for sid, c in count_rows}
+
+    attempt_rows = db.exec(
+        select(SessionAttemptModel.session_id, func.count(SessionAttemptModel.id))
+        .where(
+            SessionAttemptModel.session_id.in_(session_ids),  # type: ignore[union-attr]
+            SessionAttemptModel.deleted_at.is_(None),  # type: ignore[union-attr]
+        )
+        .group_by(SessionAttemptModel.session_id)
+    ).all()
+    attempt_counts = {sid: int(c) for sid, c in attempt_rows}
 
     pte_rows = db.exec(
         select(ClipModel.session_id, func.max(ClipModel.pte_rating))
@@ -61,13 +76,14 @@ def _timeline_aggregates(
         if url and sid not in thumbs:
             thumbs[sid] = url
 
-    return counts, best_pte, thumbs
+    return counts, attempt_counts, best_pte, thumbs
 
 
 def _session_to_item(
     row: SkateSessionModel,
     *,
     clips_count: int,
+    attempt_count: int,
     best_pte_score: float | None,
     thumbnail_url: str | None,
 ) -> ProgressionTimelineItem:
@@ -83,6 +99,7 @@ def _session_to_item(
         focus_trick=row.focus_trick,
         duration_seconds=duration_seconds,
         clips_count=clips_count,
+        attempt_count=attempt_count,
         best_pte_score=best_pte_score,
         thumbnail_url=thumbnail_url,
     )
@@ -108,11 +125,14 @@ def list_progression_timeline(
     has_more = len(rows) > page_size
     rows = rows[:page_size]
 
-    counts, best_pte, thumbs = _timeline_aggregates(db, [row.id for row in rows])
+    counts, attempt_counts, best_pte, thumbs = _timeline_aggregates(
+        db, [row.id for row in rows]
+    )
     items = [
         _session_to_item(
             row,
             clips_count=counts.get(row.id, 0),
+            attempt_count=attempt_counts.get(row.id, 0),
             best_pte_score=best_pte.get(row.id),
             thumbnail_url=thumbs.get(row.id),
         )

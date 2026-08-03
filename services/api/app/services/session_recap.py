@@ -5,12 +5,13 @@ feed payload. Uses existing data only — any metric that cannot be derived
 honestly is returned as ``None`` rather than a guessed/zero value.
 
 Clip ordering: **newest-first** (``created_at`` descending).
+``attempts_count`` comes from synced ``session_attempts``, not clip rows.
 """
 from __future__ import annotations
 
 from sqlmodel import Session, select
 
-from app.models import ClipModel, SkateSessionModel
+from app.models import ClipModel, SessionAttemptModel, SkateSessionModel
 from app.schemas.sessions import SessionRecapClip, SessionRecapDetailResponse
 from app.services.clip_upload import iso_z
 from app.services.trick_registry import normalize_trick_name
@@ -41,18 +42,32 @@ def build_session_recap_detail(
         )
     )
 
-    clips_count = len(clip_rows)
-    attempts_count = clips_count  # V1: one clip == one attempt
+    attempt_rows = list(
+        db.exec(
+            select(SessionAttemptModel).where(
+                SessionAttemptModel.session_id == session_id,
+                SessionAttemptModel.deleted_at.is_(None),  # type: ignore[union-attr]
+            )
+        )
+    )
 
-    landed_known = [c for c in clip_rows if c.landed is not None]
-    if landed_known:
-        landed_count: int | None = sum(1 for c in clip_rows if c.landed is True)
+    clips_count = len(clip_rows)
+    attempts_count = len(attempt_rows)
+
+    if attempt_rows:
+        landed_count: int | None = sum(1 for a in attempt_rows if a.outcome == "landed")
         landed_rate: float | None = (
-            round(landed_count / clips_count, 2) if clips_count else None
+            round(landed_count / attempts_count, 2) if attempts_count else None
         )
     else:
-        landed_count = None
-        landed_rate = None
+        # No synced attempts — fall back to clip-level landed flags when present.
+        landed_known = [c for c in clip_rows if c.landed is not None]
+        if landed_known:
+            landed_count = sum(1 for c in clip_rows if c.landed is True)
+            landed_rate = round(landed_count / clips_count, 2) if clips_count else None
+        else:
+            landed_count = None
+            landed_rate = None
 
     pte_known = [c.pte_rating for c in clip_rows if c.pte_rating is not None]
     best_pte_score = float(max(pte_known)) if pte_known else None

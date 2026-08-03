@@ -100,10 +100,14 @@ export async function loadSessionAttempts(
   };
 }
 
+export type AppendSessionAttemptResult =
+  | { ok: true; syncError?: string }
+  | { ok: false; error: string };
+
 export async function appendSessionAttempt(
   userId: string,
   attempt: SessionAttempt,
-): Promise<StorageResult> {
+): Promise<AppendSessionAttemptResult> {
   const sid = attempt.sessionId.trim();
   if (!sid) return { ok: false, error: "Missing session id" };
 
@@ -111,7 +115,8 @@ export async function appendSessionAttempt(
   const existing = result.data[sid] ?? [];
   if (existing.some((a) => a.id === attempt.id)) {
     await enqueueAttemptForSync(attempt);
-    void flushAttemptOutbox();
+    const flush = await flushAttemptOutbox();
+    if (flush.error) return { ok: true, syncError: flush.error };
     return { ok: true };
   }
   const next = [...existing, attempt];
@@ -119,7 +124,13 @@ export async function appendSessionAttempt(
   if (!saved.ok) return saved;
 
   await enqueueAttemptForSync(attempt);
-  void flushAttemptOutbox();
+  const flush = await flushAttemptOutbox();
+  if (flush.error) {
+    return {
+      ok: true,
+      syncError: flush.error,
+    };
+  }
   return { ok: true };
 }
 

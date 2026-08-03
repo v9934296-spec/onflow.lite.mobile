@@ -30,11 +30,18 @@ def _app_client(
     if production:
         monkeypatch.setenv("ONFLOW_REDIS_URL", "redis://127.0.0.1:6379/0")
         monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+        monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
         monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
         monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
         monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
         monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
         monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
+        monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+        monkeypatch.setenv(
+            "ONFLOW_RC_PRO_PRODUCT_IDS",
+            "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+        )
+        monkeypatch.setenv("ONFLOW_ALLOW_CREATE_ALL", "1")
     else:
         monkeypatch.delenv("ONFLOW_REDIS_URL", raising=False)
     import app.core.database as database_module
@@ -143,13 +150,16 @@ def test_beta_client_events_rate_limited(tmp_path: Path, monkeypatch: pytest.Mon
 def test_webhook_lightweight_limit_does_not_replace_auth(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Missing secret still 401 in production; throttle is additional."""
+    """Wrong Authorization still 401 in production; throttle is additional."""
     monkeypatch.setenv("ONFLOW_ENV", "production")
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "k" * 32)
-    monkeypatch.delenv("ONFLOW_RC_WEBHOOK_SECRET", raising=False)
     monkeypatch.setenv("ONFLOW_WEBHOOK_RATE_LIMIT_PER_MINUTE", "500")
     with _app_client(tmp_path, monkeypatch, production=True) as c:
-        r = c.post("/api/v1/webhooks/revenuecat", json={})
+        r = c.post(
+            "/api/v1/webhooks/revenuecat",
+            json={},
+            headers={"Authorization": "Bearer wrong-secret"},
+        )
         assert r.status_code == 401
 
 
@@ -203,12 +213,14 @@ def test_concurrent_processing_limit_returns_429(
             },
         )
         assert initiated.status_code == 201, initiated.text
-        write_presigned_upload(c, initiated.json()["storage_key"], b"fake")
+        from app.services.video_signature import MINIMAL_VIDEO_SNIFF_BYTES
+
+        write_presigned_upload(c, initiated.json()["storage_key"], MINIMAL_VIDEO_SNIFF_BYTES)
         r = c.post(
             f"/api/v1/clips/{initiated.json()['clip_id']}/complete-upload",
             headers=h,
         )
-        assert r.status_code == 429
+        assert r.status_code == 429, r.text
         assert "processing" in r.json()["detail"].lower()
 
 
@@ -218,10 +230,16 @@ def test_production_settings_require_redis_url(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "k" * 32)
     monkeypatch.setenv("ONFLOW_DATABASE_URL", "postgresql://user:pass@localhost/onflow")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
     monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
+    monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+    monkeypatch.setenv(
+        "ONFLOW_RC_PRO_PRODUCT_IDS",
+        "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+    )
     monkeypatch.delenv("ONFLOW_REDIS_URL", raising=False)
     with pytest.raises(Exception) as exc:
         Settings()
@@ -234,10 +252,16 @@ def test_production_settings_reject_non_redis_url(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "k" * 32)
     monkeypatch.setenv("ONFLOW_DATABASE_URL", "postgresql://user:pass@localhost/onflow")
     monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
     monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
+    monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+    monkeypatch.setenv(
+        "ONFLOW_RC_PRO_PRODUCT_IDS",
+        "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+    )
     monkeypatch.setenv("ONFLOW_REDIS_URL", "memory://")
     with pytest.raises(Exception) as exc:
         Settings()

@@ -8,6 +8,7 @@ export type ProgressionTimelineItem = {
   focus_trick: string | null;
   duration_seconds: number | null;
   clips_count: number;
+  attempt_count: number;
   best_pte_score: number | null;
   thumbnail_url: string | null;
 };
@@ -72,6 +73,7 @@ function parseItem(raw: unknown): ProgressionTimelineItem | null {
     focus_trick: typeof o.focus_trick === "string" ? o.focus_trick : null,
     duration_seconds: typeof o.duration_seconds === "number" ? o.duration_seconds : null,
     clips_count: typeof o.clips_count === "number" ? o.clips_count : 0,
+    attempt_count: typeof o.attempt_count === "number" ? o.attempt_count : 0,
     best_pte_score: typeof o.best_pte_score === "number" ? o.best_pte_score : null,
     thumbnail_url: typeof o.thumbnail_url === "string" ? o.thumbnail_url : null,
   };

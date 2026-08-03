@@ -39,7 +39,7 @@ def verify_apple_id_token(token: str) -> dict:
         raise AppleAuthError("empty token")
 
     settings = get_settings()
-    audience = (settings.apple_bundle_id or "").strip() or "skate.onflow.mobile"
+    audience = (settings.apple_bundle_id or "").strip() or "com.onflow.lite"
 
     try:
         hdr = jwt.get_unverified_header(raw)

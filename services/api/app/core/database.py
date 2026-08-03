@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -33,13 +34,36 @@ def get_engine():
     return _engine
 
 
+def dispose_engine() -> None:
+    """Dispose the process-scoped SQLAlchemy engine (API lifespan shutdown)."""
+    global _engine
+    eng = _engine
+    _engine = None
+    if eng is not None:
+        eng.dispose()
+
+
 def create_db_tables() -> None:
     """
-  Create SQLModel tables for local bootstrap (empty SQLite / first run).
+    Create SQLModel tables for local bootstrap (empty SQLite / first run).
 
-  **Schema migrations:** use Alembic only — ``alembic upgrade head`` from ``services/api``.
-  Do not add runtime ALTER TABLE helpers here; see ``docs/architecture/schema-migrations.md``.
-  """
+    **Schema migrations:** use Alembic only — ``alembic upgrade head`` from ``services/api``.
+    Skipped in production/staging so missing migrations cannot be masked by create_all.
+    Tests that boot a production Settings profile may set ``ONFLOW_ALLOW_CREATE_ALL=1``.
+    """
+    settings = get_settings()
+    allow_create_all = (os.environ.get("ONFLOW_ALLOW_CREATE_ALL") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if settings.is_production_or_staging and not allow_create_all:
+        _log.info(
+            "create_db_tables skipped (Alembic owns schema in env=%s)",
+            settings.env,
+        )
+        return
+
     from app.models import (  # noqa: F401 — registers tables
         BetaFeedbackModel,
         ClientFunnelEventModel,

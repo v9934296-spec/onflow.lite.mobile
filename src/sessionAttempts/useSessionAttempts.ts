@@ -85,6 +85,10 @@ export function useSessionAttempts(sessionId: string | null): UseSessionAttempts
           return false;
         }
 
+        if (result.syncError) {
+          setSubmitError(result.syncError);
+        }
+
         track("session_attempt_logged", {
           session_id: sessionId,
           trick_id: trick.trickId,

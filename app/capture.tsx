@@ -61,16 +61,6 @@ export default function Capture() {
     );
   };
 
-  const discardPendingJob = async (userId: string) => {
-    const result = await clearPendingAnalysisJob(userId);
-    if (!result.ok) {
-      Alert.alert("Couldn't discard analysis", result.error);
-      return;
-    }
-    setPendingClipJobId(null);
-    setAnalysis(null);
-  };
-
   const uploadUserClip = async (asset: ImagePicker.ImagePickerAsset, called: string) => {
     if (!activeSession?.id || !user?.user_id) {
       throw new Error("No signed-in active session is available for this upload.");
@@ -94,7 +84,6 @@ export default function Capture() {
       throw new Error("Could not read the video dimensions. Choose a different clip.");
     }
 
-    let recoveryJobId: string | null = null;
     setStatusLabel("Preparing upload…");
     const uploaded = await uploadClipToSession({
       sessionId,
@@ -105,21 +94,6 @@ export default function Capture() {
       heightPx: asset.height,
       sizeBytes: fileInfo.size,
       clientHintTrickId: selectedTrick?.trickId ?? null,
-      onInitiated: async (initiated) => {
-        const pendingResult = await savePendingAnalysisJob(userId, {
-          jobId: initiated.clip_id,
-          sessionId,
-          trickName: called,
-          selectedTrick,
-          submittedAt: new Date().toISOString(),
-        });
-        if (!pendingResult.ok) {
-          throw new Error(`Could not save analysis recovery data: ${pendingResult.error}`);
-        }
-        recoveryJobId = initiated.clip_id;
-        setAnalysis(null);
-        setPendingClipJobId(initiated.clip_id);
-      },
       onProgress: (fraction) => {
         setStatusLabel(`Uploading clip… ${Math.round(fraction * 100)}%`);
       },
@@ -129,31 +103,32 @@ export default function Capture() {
       if (isQuotaExceededMessage(uploaded.error.message)) {
         throw new QuotaExceededError(uploaded.error.message);
       }
-      if (recoveryJobId) {
-        track("capture_interrupted", {
-          source: "user_upload",
-          trick: called,
-          job_id: recoveryJobId,
-          message: uploaded.error.message,
-        });
-        Alert.alert(
-          "Upload interrupted",
-          `${uploaded.error.message}\n\nThe analysis ID was saved. Check whether the server received it, or discard it and film again.`,
-          [
-            {
-              text: "Discard",
-              style: "destructive",
-              onPress: () => void discardPendingJob(userId),
-            },
-            { text: "Check status", onPress: () => router.replace("/analyzing" as never) },
-          ],
-        );
-        return;
-      }
+      // Job rows exist only after complete-upload — do not offer "check status"
+      // against a clip_id that is not yet a pollable analysis job.
+      await clearPendingAnalysisJob(userId);
+      setPendingClipJobId(null);
+      track("capture_interrupted", {
+        source: "user_upload",
+        trick: called,
+        message: uploaded.error.message,
+      });
       throw new Error(uploaded.error.message);
     }
 
-    track("capture_completed", { source: "user_upload", trick: called, job_id: uploaded.data });
+    const jobId = uploaded.data;
+    const pendingResult = await savePendingAnalysisJob(userId, {
+      jobId,
+      sessionId,
+      trickName: called,
+      selectedTrick,
+      submittedAt: new Date().toISOString(),
+    });
+    if (!pendingResult.ok) {
+      throw new Error(`Could not save analysis recovery data: ${pendingResult.error}`);
+    }
+    setAnalysis(null);
+    setPendingClipJobId(jobId);
+    track("capture_completed", { source: "user_upload", trick: called, job_id: jobId });
     router.push("/analyzing" as never);
   };
 

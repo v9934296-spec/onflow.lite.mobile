@@ -29,6 +29,30 @@ async def get_arq_pool():
     return _arq_pool
 
 
+async def close_arq_pool() -> None:
+    """Close the process-scoped ARQ pool (API lifespan shutdown)."""
+    global _arq_pool
+    pool = _arq_pool
+    _arq_pool = None
+    if pool is None:
+        return
+    try:
+        await pool.aclose()
+    except Exception:
+        logger.exception("arq_pool_close_failed")
+
+
+async def reap_pending_clips_cron(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Hourly ARQ cron: delete abandoned pending uploads (storage + clip rows)."""
+    del ctx
+    from app.services.clip_pending_reaper import reap_abandoned_pending_clips
+    from app.services.object_storage import build_storage
+
+    report = await reap_abandoned_pending_clips(storage=build_storage())
+    logger.info("cron_pending_reaper", **report)
+    return report
+
+
 async def enqueue_clip_job(
     job_id: str,
     storage_key: str,
@@ -88,12 +112,11 @@ async def process_clip_job(ctx: dict[str, Any], job_id: str, storage_key: str, u
     del ctx
     from sqlmodel import Session
 
-    from app.core.database import create_db_tables, get_engine
+    from app.core.database import get_engine
     from app.repositories.clip_jobs import SqlClipJobRepository
     from app.services.clip_worker import run_clip_job
     from app.services.object_storage import build_storage
 
-    create_db_tables()
     engine = get_engine()
     repo = SqlClipJobRepository(lambda: Session(engine))
     storage = build_storage()
@@ -122,6 +145,12 @@ def _worker_job_timeout() -> int:
         return 300
 
 
+def _worker_cron_jobs():
+    from arq import cron
+
+    return [cron(reap_pending_clips_cron, minute=0, unique=True)]
+
+
 class WorkerSettings:
     """ARQ worker settings. Run with: arq app.services.job_queue.WorkerSettings
 
@@ -130,7 +159,8 @@ class WorkerSettings:
     changes. ARQ reads these as class attributes, so resolve them at import time.
     """
 
-    functions = [process_clip_job, hard_delete_user_clips]
+    functions = [process_clip_job, hard_delete_user_clips, reap_pending_clips_cron]
+    cron_jobs = _worker_cron_jobs()
     max_jobs = _worker_max_jobs()
     job_timeout = _worker_job_timeout()
     max_tries = 2

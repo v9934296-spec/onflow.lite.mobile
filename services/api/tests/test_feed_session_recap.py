@@ -183,3 +183,45 @@ def test_recap_payload_has_card_fields(authed_client: TestClient) -> None:
         "completed_at",
     ):
         assert key in payload, f"missing payload key: {key}"
+
+
+def test_recap_attempt_count_from_synced_attempts(authed_client: TestClient) -> None:
+    headers = authed_client.headers
+    sess = _create_session(authed_client, headers)
+    sid = sess["id"]
+    sync = authed_client.post(
+        "/api/v1/session-attempts/sync",
+        headers=headers,
+        json={
+            "attempts": [
+                {
+                    "id": "feed-a1",
+                    "session_id": sid,
+                    "trick_id": "kickflip",
+                    "canonical_name": "Kickflip",
+                    "outcome": "landed",
+                    "logged_at": "2026-07-17T12:00:00Z",
+                },
+                {
+                    "id": "feed-a2",
+                    "session_id": sid,
+                    "trick_id": "kickflip",
+                    "canonical_name": "Kickflip",
+                    "outcome": "missed",
+                    "logged_at": "2026-07-17T12:01:00Z",
+                },
+            ]
+        },
+    )
+    assert sync.status_code == 200, sync.text
+    ended = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    authed_client.patch(
+        f"/api/v1/sessions/{sid}", json={"ended_at": ended}, headers=headers
+    )
+    item = [
+        i
+        for i in authed_client.get("/api/v1/feed", headers=headers).json()["items"]
+        if i["event_type"] == "session_recap" and i["payload"]["session_id"] == sid
+    ][0]
+    assert item["payload"]["clip_count"] == 0
+    assert item["payload"]["attempt_count"] == 2
