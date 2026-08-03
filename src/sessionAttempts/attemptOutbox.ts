@@ -80,12 +80,10 @@ export async function flushAttemptOutbox(): Promise<{
     // but ids accepted while we held the lock are still dropped from the latest box.
     const latest = await loadOutbox();
     const accepted = new Set(result.data.accepted);
-    const hardReject = new Set(
-      result.data.rejected
-        .filter((r) => r.reason === "session_not_found" || r.reason === "forbidden")
-        .map((r) => r.id),
-    );
-    const remaining = latest.filter((a) => !accepted.has(a.id) && !hardReject.has(a.id));
+    // Drop every server-rejected id (including soft validation rejects). Keeping
+    // them retries forever and can brick endSession when remaining > 0.
+    const rejected = new Set(result.data.rejected.map((r) => r.id));
+    const remaining = latest.filter((a) => !accepted.has(a.id) && !rejected.has(a.id));
     await saveOutbox(remaining);
     return { flushed: accepted.size, remaining: remaining.length };
   });

@@ -21,6 +21,11 @@ def _deployed_env(monkeypatch: pytest.MonkeyPatch, env: str) -> None:
     monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-s3-secret")
+    monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+    monkeypatch.setenv(
+        "ONFLOW_RC_PRO_PRODUCT_IDS",
+        "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+    )
     get_settings.cache_clear()
 
 

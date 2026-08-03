@@ -43,7 +43,8 @@ def test_feed_stream_rejects_session_jwt_in_query(authed_client: TestClient) -> 
 def test_feed_sse_ticket_mints_query_token(authed_client: TestClient) -> None:
     from types import SimpleNamespace
 
-    from app.core.auth import resolve_sse_query_token
+    from app.core.auth import resolve_sse_query_token, resolve_user_id_from_token
+    from fastapi import HTTPException
 
     ticket = authed_client.post("/api/v1/feed/sse-ticket")
     assert ticket.status_code == 200, ticket.text
@@ -54,6 +55,11 @@ def test_feed_sse_ticket_mints_query_token(authed_client: TestClient) -> None:
 
     request = SimpleNamespace(app=SimpleNamespace(state=authed_client.app.state))
     assert resolve_sse_query_token(request, body["token"]) == "test-user-001"
+
+    # Short-lived SSE tickets must not authenticate ordinary REST Bearer routes.
+    with pytest.raises(HTTPException) as exc:
+        resolve_user_id_from_token(request, body["token"])
+    assert exc.value.status_code == 401
 
 
 def test_feed_sse_hub_heartbeat_format() -> None:

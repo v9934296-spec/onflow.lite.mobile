@@ -179,9 +179,9 @@ def _create_job_charging_quota_sql(
             session.add(_record_to_model(record))
             session.commit()
         except IntegrityError:
+            # Bonus decrement (if any) was in this same transaction — rollback
+            # already restores it. Do not call refund_one_bonus here.
             session.rollback()
-            if quota_src == "bonus":
-                db.refund_one_bonus(user_id)
             raise JobAlreadyExists(record.id)
         return record
 

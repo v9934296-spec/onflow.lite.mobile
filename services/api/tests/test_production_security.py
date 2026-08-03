@@ -23,6 +23,13 @@ def _prod_db_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
+    monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+    monkeypatch.setenv(
+        "ONFLOW_RC_PRO_PRODUCT_IDS",
+        "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+    )
+    # Production Settings skip create_all; allow SQLite schema bootstrap in tests only.
+    monkeypatch.setenv("ONFLOW_ALLOW_CREATE_ALL", "1")
 
 
 def _prod_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -35,6 +42,11 @@ def _prod_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
+    monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+    monkeypatch.setenv(
+        "ONFLOW_RC_PRO_PRODUCT_IDS",
+        "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+    )
     monkeypatch.delenv("ONFLOW_TWELVELABS_API_KEY", raising=False)
     monkeypatch.delenv("ONFLOW_GEMINI_API_KEY", raising=False)
     from app.core.config import get_settings
@@ -123,26 +135,52 @@ def test_development_allows_dev_tokens_when_no_jwt_secret(
         assert r.status_code == 200
 
 
-def test_production_webhook_requires_secret(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_production_webhook_secret_required_at_settings(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ONFLOW_ENV", "production")
-    monkeypatch.setenv("ONFLOW_JWT_SECRET", "k" * 32)
+    _prod_settings_env(monkeypatch)
+    monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
     monkeypatch.delenv("ONFLOW_RC_WEBHOOK_SECRET", raising=False)
-    _prod_db_env(tmp_path, monkeypatch)
-    import app.core.database as database_module
+    from app.core.config import Settings, get_settings
 
-    database_module._engine = None
-    from app.main import create_app
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError) as exc:
+        Settings()
+    assert "ONFLOW_RC_WEBHOOK_SECRET" in str(exc.value)
 
-    with TestClient(create_app()) as c:
-        r = c.post(
-            "/api/v1/webhooks/revenuecat",
-            json={"event": {"type": "INITIAL_PURCHASE", "app_user_id": "u1"}},
-        )
-        assert r.status_code == 401
-        detail = (r.json().get("detail") or "").lower()
-        assert "webhook" in detail or "authorization" in detail or "configured" in detail
+
+def test_staging_requires_jwt_secret_at_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONFLOW_ENV", "staging")
+    _prod_settings_env(monkeypatch)
+    monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.delenv("ONFLOW_JWT_SECRET", raising=False)
+    from app.core.config import Settings, get_settings
+
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError) as exc:
+        Settings()
+    assert "ONFLOW_JWT_SECRET" in str(exc.value)
+
+
+def test_production_rejects_cors_wildcard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONFLOW_ENV", "production")
+    _prod_settings_env(monkeypatch)
+    monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
+    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
+    monkeypatch.setenv("ONFLOW_CORS_ORIGINS", "*")
+    from app.core.config import Settings, get_settings
+
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError) as exc:
+        Settings()
+    assert "ONFLOW_CORS_ORIGINS" in str(exc.value)
 
 
 def test_production_issue_onflow_access_token_never_dev_prefix(
@@ -158,12 +196,20 @@ def test_production_issue_onflow_access_token_never_dev_prefix(
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
+    monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+    monkeypatch.setenv(
+        "ONFLOW_RC_PRO_PRODUCT_IDS",
+        "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+    )
+    monkeypatch.setenv("ONFLOW_ALLOW_CREATE_ALL", "1")
     # Production fail-closed: must always set ONFLOW_DATABASE_URL.
     monkeypatch.setenv(
         "ONFLOW_DATABASE_URL", f"sqlite:///{(tmp_path / 'tok.db').as_posix()}"
     )
     from app.core.auth import issue_onflow_access_token
+    from app.core.config import get_settings
 
+    get_settings.cache_clear()
     token = issue_onflow_access_token("a" * 16)
     assert not token.startswith("dev:")
     assert token.count(".") == 2
@@ -174,22 +220,12 @@ def test_production_claim_invite_removed(
 ) -> None:
     monkeypatch.setenv("ONFLOW_ENV", "production")
     monkeypatch.setenv("ONFLOW_JWT_SECRET", "unit-test-jwt-secret-32-bytes-minimum")
-    monkeypatch.setenv("ONFLOW_REDIS_URL", "redis://127.0.0.1:6379/0")
-    monkeypatch.setenv("ONFLOW_TWELVELABS_API_KEY", "test-twelvelabs-key")
-    monkeypatch.setenv("ONFLOW_GEMINI_API_KEY", "test-gemini-key")
-    monkeypatch.setenv("ONFLOW_S3_BUCKET", "onflow-clips")
-    monkeypatch.setenv("ONFLOW_S3_ENDPOINT", "https://example.r2.cloudflarestorage.com")
-    monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
-    monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
-    monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
-    # Production fail-closed: must always set ONFLOW_DATABASE_URL.
-    monkeypatch.setenv(
-        "ONFLOW_DATABASE_URL", f"sqlite:///{(tmp_path / 'claim.db').as_posix()}"
-    )
-    monkeypatch.setenv("ONFLOW_UPLOAD_DIR", str(tmp_path / "up"))
+    _prod_db_env(tmp_path, monkeypatch)
     import app.core.database as database_module
+    from app.core.config import get_settings
 
     database_module._engine = None
+    get_settings.cache_clear()
     from app.main import create_app
 
     with TestClient(create_app()) as c:
@@ -344,6 +380,11 @@ def test_twelvelabs_key_never_in_validation_error_or_logs(
     monkeypatch.setenv("ONFLOW_S3_ACCESS_KEY", "test-access-key")
     monkeypatch.setenv("ONFLOW_S3_SECRET_KEY", "test-secret-key")
     monkeypatch.setenv("ONFLOW_ADMIN_EMAILS", "ops-admin@onflow.test")
+    monkeypatch.setenv("ONFLOW_RC_WEBHOOK_SECRET", "rc-webhook-test-secret")
+    monkeypatch.setenv(
+        "ONFLOW_RC_PRO_PRODUCT_IDS",
+        "com.onflow.lite.lifetime,com.onflow.lite.yearly,com.onflow.lite.monthly",
+    )
     from app.core.config import Settings, get_settings
     from app.core.twelvelabs_config import get_twelvelabs_api_key
 

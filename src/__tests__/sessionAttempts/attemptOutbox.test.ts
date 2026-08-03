@@ -103,4 +103,23 @@ describe("attemptOutbox lock", () => {
       a2.id,
     ]);
   });
+
+  it("drops soft-rejected attempts so they cannot brick endSession", async () => {
+    const bad = buildSessionAttempt({
+      sessionId: "sess-1",
+      trickId: "kickflip",
+      canonicalName: "Kickflip",
+      outcome: "landed",
+    });
+    await enqueueAttemptForSync(bad);
+    syncMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        accepted: [],
+        rejected: [{ id: bad.id, reason: "invalid_logged_at" }],
+      },
+    });
+    const flush = await flushAttemptOutbox();
+    expect(flush.remaining).toBe(0);
+  });
 });

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -48,9 +49,15 @@ def create_db_tables() -> None:
 
     **Schema migrations:** use Alembic only — ``alembic upgrade head`` from ``services/api``.
     Skipped in production/staging so missing migrations cannot be masked by create_all.
+    Tests that boot a production Settings profile may set ``ONFLOW_ALLOW_CREATE_ALL=1``.
     """
     settings = get_settings()
-    if settings.is_production_or_staging:
+    allow_create_all = (os.environ.get("ONFLOW_ALLOW_CREATE_ALL") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if settings.is_production_or_staging and not allow_create_all:
         _log.info(
             "create_db_tables skipped (Alembic owns schema in env=%s)",
             settings.env,

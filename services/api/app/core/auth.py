@@ -24,10 +24,10 @@ def issue_onflow_access_token(user_id: str) -> str:
     settings = get_settings()
     secret = settings.jwt_secret.strip()
     if not secret:
-        if settings.is_production:
+        if settings.is_production_or_staging:
             raise HTTPException(
                 status_code=500,
-                detail="Server misconfiguration: JWT signing is required in production.",
+                detail="Server misconfiguration: JWT signing is required in production/staging.",
             )
         logger.warning("ONFLOW_JWT_SECRET not set — returning unsigned dev token")
         return f"dev:{user_id}"
@@ -45,10 +45,10 @@ def issue_sse_access_token(user_id: str, *, ttl_seconds: int = 300) -> str:
     secret = settings.jwt_secret.strip()
     ttl = max(60, min(int(ttl_seconds), 900))
     if not secret:
-        if settings.is_production:
+        if settings.is_production_or_staging:
             raise HTTPException(
                 status_code=500,
-                detail="Server misconfiguration: JWT signing is required in production.",
+                detail="Server misconfiguration: JWT signing is required in production/staging.",
             )
         return f"dev-sse:{user_id}"
     now = datetime.now(timezone.utc)
@@ -69,7 +69,7 @@ def resolve_sse_query_token(request: Request, token: str) -> str:
         raise HTTPException(status_code=401, detail="Missing SSE stream ticket.")
 
     if cleaned.startswith("dev-sse:"):
-        if settings.is_production:
+        if settings.is_production_or_staging:
             raise HTTPException(status_code=401, detail="Invalid SSE stream ticket.")
         return cleaned[len("dev-sse:") :]
 
@@ -116,6 +116,11 @@ def resolve_user_id_from_token(request: Request, token: str) -> str:
     if secret:
         try:
             payload = jwt.decode(cleaned, secret, algorithms=["HS256"])
+            if payload.get("purpose") == "sse":
+                raise HTTPException(
+                    status_code=401,
+                    detail="SSE stream tickets cannot be used as Bearer session tokens.",
+                )
             user_id = payload.get("sub")
             if not user_id:
                 raise HTTPException(status_code=401, detail="Invalid token payload.")
@@ -144,7 +149,7 @@ def resolve_user_id_from_token(request: Request, token: str) -> str:
             raise HTTPException(status_code=401, detail="Invalid token.")
 
     if cleaned.startswith("dev:"):
-        if settings.is_production:
+        if settings.is_production_or_staging:
             raise HTTPException(
                 status_code=401,
                 detail="Invalid or unknown session. Sign in again from the app.",
