@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getFlowRedirect } from "../src/flowGuard";
 import { useSession } from "../src/session";
-import { C, F } from "../src/theme";
+import { C, F, withOpacity } from "../src/theme";
 import type { ManualOutcome } from "../src/types";
 import { Btn, Card, Eyebrow, Field, LiteBanner, Tag } from "../src/ui";
 
@@ -28,7 +28,16 @@ function OutcomeBtn({
       onPress={onPress}
       style={[
         s.outcomeBtn,
-        selected ? { borderColor: color, backgroundColor: C.charcoal3 } : null,
+        selected
+          ? {
+              borderColor: color,
+              backgroundColor: withOpacity(color, 0.14),
+              shadowColor: color,
+              shadowOpacity: 0.45,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 0 },
+            }
+          : null,
         disabled ? { opacity: 0.5 } : null,
       ]}
     >
@@ -119,7 +128,7 @@ export default function Result() {
         <Text style={s.engineStamp}>{currentAnalysis.engineVersion}</Text>
       </View>
 
-      <Card accent={currentAnalysis.abstained ? C.red : isSelfReport ? C.amber : C.volt}>
+      <Card accent={currentAnalysis.abstained ? C.red : C.volt}>
         <View style={s.metaRow}>
           <Tag kind={currentAnalysis.evidenceClass} />
           <Text style={[s.confidence, { color: currentAnalysis.confidence == null ? C.dim : evidenceColor }]}>
@@ -189,7 +198,7 @@ export default function Result() {
             label="Unsure"
             selected={outcome === "unsure"}
             onPress={() => setOutcome("unsure")}
-            color={C.amber}
+            color={C.dim}
             disabled={submitting}
           />
         </View>
@@ -248,18 +257,33 @@ export default function Result() {
 
 const s = StyleSheet.create({
   content: { paddingHorizontal: 24, gap: 16 },
-  title: { fontFamily: F.heading, fontSize: 26, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 26,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.25),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
   engineStamp: { fontFamily: F.mono, fontSize: 9, color: C.dim, letterSpacing: 0.6 },
   metaRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   confidence: { fontFamily: F.mono, fontSize: 11 },
   ratingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  rating: { fontFamily: F.heading, fontSize: 46, color: C.volt, lineHeight: 48 },
+  rating: {
+    fontFamily: F.heading,
+    fontSize: 46,
+    color: C.volt,
+    lineHeight: 48,
+    textShadowColor: withOpacity(C.volt, 0.45),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
   outOf: { fontFamily: F.mono, fontSize: 12, color: C.dim },
   noRating: { fontFamily: F.heading, fontSize: 22, color: C.red },
-  selfReport: { fontFamily: F.heading, fontSize: 18, color: C.amber },
+  selfReport: { fontFamily: F.heading, fontSize: 18, color: C.volt },
   verdict: { fontFamily: F.body, fontSize: 13, color: C.offwhite, flex: 1, textAlign: "right" },
   abstainReason: { fontFamily: F.mono, fontSize: 10, color: C.red, lineHeight: 15, marginTop: 4 },
-  receiptRow: { gap: 2, paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: C.charcoal3 },
+  receiptRow: { gap: 2, paddingVertical: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.charcoal4 },
   receiptLabel: { fontFamily: F.mono, fontSize: 9, color: C.dim, letterSpacing: 0.6 },
   receiptDetail: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.offwhite },
   obsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 10 },
@@ -270,10 +294,11 @@ const s = StyleSheet.create({
   outcomeBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: C.charcoal4,
-    borderRadius: 8,
+    borderColor: C.charcoal5,
+    borderRadius: 999,
     paddingVertical: 12,
     alignItems: "center",
+    backgroundColor: C.charcoal,
   },
   outcomeBtnText: { fontFamily: F.bold, fontSize: 13, color: C.dim },
 });

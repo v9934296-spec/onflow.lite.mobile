@@ -22,7 +22,7 @@ import { useAccount } from "../src/auth/accountContext";
 import { useAuth } from "../src/auth/authContext";
 import { isProTier, PAYWALL_ROUTE, usePurchases } from "../src/billing";
 import { DELETE_ACCOUNT_INFO_URL, PRIVACY_URL, TERMS_URL } from "../src/legal/urls";
-import { C, F, RADIUS, SPACE } from "../src/theme";
+import { C, F, RADIUS, SPACE, withOpacity } from "../src/theme";
 import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 
 function Row({
@@ -181,8 +181,8 @@ export default function SettingsScreen() {
             <SkeletonLines widths={["40%", "70%"]} />
           </Card>
         ) : overview ? (
-          <Card>
-            <Eyebrow>YOUR STATS</Eyebrow>
+          <Card accent={C.volt}>
+            <Eyebrow color={C.volt}>YOUR STATS</Eyebrow>
             <View style={s.stats}>
               <Stat label="Sessions" value={String(overview.total_sessions)} />
               <Stat label="Make rate" value={`${Math.round(overview.global_make_rate)}%`} />
@@ -263,33 +263,52 @@ function Stat({ label, value }: { label: string; value: string }) {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
   content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, gap: SPACE.lg },
-  title: { fontFamily: F.heading, fontSize: 32, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 32,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.3),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
   avatarRow: { flexDirection: "row", alignItems: "center", gap: SPACE.md },
   avatar: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: C.charcoal3,
+    backgroundColor: C.charcoal,
+    borderWidth: 2,
+    borderColor: C.volt,
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: C.volt,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
   },
   avatarLetter: { fontFamily: F.heading, fontSize: 22, color: C.volt },
   value: { fontFamily: F.bold, fontSize: 15, color: C.offwhite },
-  meta: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8, color: C.dim },
+  meta: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8, color: C.volt },
   stats: { flexDirection: "row", gap: SPACE.lg },
   stat: { gap: 2 },
-  statValue: { fontFamily: F.monoBold, fontSize: 20, color: C.offwhite },
+  statValue: { fontFamily: F.monoBold, fontSize: 22, color: C.volt },
   statLabel: { fontFamily: F.mono, fontSize: 10, color: C.dim, textTransform: "uppercase" },
-  group: { backgroundColor: C.charcoal2, borderRadius: RADIUS.lg, overflow: "hidden" },
+  group: {
+    backgroundColor: C.charcoal,
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal4,
+  },
   row: {
     minHeight: 58,
     paddingHorizontal: SPACE.lg,
     flexDirection: "row",
     alignItems: "center",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: C.charcoal3,
+    borderBottomColor: C.charcoal4,
   },
   rowLabel: { fontFamily: F.bold, fontSize: 14, color: C.offwhite },
   rowValue: { fontFamily: F.body, fontSize: 11, color: C.dim, marginTop: 2 },
-  chevron: { fontFamily: F.body, fontSize: 24, color: C.dim },
+  chevron: { fontFamily: F.body, fontSize: 24, color: C.volt },
 });

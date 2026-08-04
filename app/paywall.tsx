@@ -13,7 +13,7 @@ import {
   RC_PACKAGE_IDS,
 } from "../src/billing";
 import { PRIVACY_URL, TERMS_URL } from "../src/legal/urls";
-import { C, F } from "../src/theme";
+import { C, F, withOpacity } from "../src/theme";
 import { Btn, Card, Eyebrow } from "../src/ui";
 
 /**
@@ -124,7 +124,7 @@ export default function PaywallScreen() {
   return (
     <View style={[s.screen, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
       <View style={{ gap: 6 }}>
-        <Eyebrow>ONFLOW LITE PRO</Eyebrow>
+        <Eyebrow color={C.volt}>ONFLOW LITE PRO</Eyebrow>
         <Text style={s.title}>{isPro ? "You're on Pro" : "Unlock unlimited analysis"}</Text>
         <Text style={s.sub}>
           {isPro
@@ -133,7 +133,7 @@ export default function PaywallScreen() {
         </Text>
       </View>
 
-      <Card accent={C.volt}>
+      <Card accent={C.volt} style={s.planCard}>
         <Eyebrow color={C.volt}>CURRENT PLAN</Eyebrow>
         <Text style={s.plan}>{isPro ? "Pro" : user?.tier ?? "free"}</Text>
         {user?.bonus_analyses_remaining != null && user.bonus_analyses_remaining > 0 ? (
@@ -183,9 +183,33 @@ export default function PaywallScreen() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 14 },
-  title: { fontFamily: F.heading, fontSize: 24, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 28,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.35),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
-  plan: { fontFamily: F.bold, fontSize: 18, color: C.volt, marginTop: 4, textTransform: "capitalize" },
+  planCard: {
+    backgroundColor: C.charcoal,
+    shadowColor: C.volt,
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  plan: {
+    fontFamily: F.heading,
+    fontSize: 28,
+    color: C.volt,
+    marginTop: 4,
+    textTransform: "capitalize",
+    textShadowColor: withOpacity(C.volt, 0.4),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
   meta: { fontFamily: F.body, fontSize: 13, color: C.dim, marginTop: 4 },
   loadingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8 },
 });

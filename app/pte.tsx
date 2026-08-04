@@ -23,7 +23,7 @@ import {
 } from "../src/api/progressionApi";
 import { RatingLine } from "../src/charts";
 import { adaptTrickStats, formatTrickDisplay } from "../src/progressionAdapter";
-import { C, F, SPACE } from "../src/theme";
+import { C, F, SPACE, withOpacity } from "../src/theme";
 import { Card, Eyebrow, SkeletonLines, WeekRow } from "../src/ui";
 import type { DaySlot } from "../src/progress";
 
@@ -137,8 +137,8 @@ export default function PteFlowScreen() {
         {!loading && !error ? (
           <>
             {whatsNext ? (
-              <Card accent={whatsNext.has_recommendation ? C.volt : C.muted}>
-                <Eyebrow color={C.volt}>WHAT'S NEXT</Eyebrow>
+              <Card accent={whatsNext.has_recommendation ? C.volt : C.red}>
+                <Eyebrow color={whatsNext.has_recommendation ? C.volt : C.red}>WHAT'S NEXT</Eyebrow>
                 <Text style={s.cardTitle}>
                   {whatsNext.focus_trick
                     ? formatTrickDisplay(whatsNext.focus_trick)
@@ -153,8 +153,8 @@ export default function PteFlowScreen() {
             ) : null}
 
             {overview ? (
-              <Card>
-                <Eyebrow>OVERVIEW</Eyebrow>
+              <Card accent={C.volt}>
+                <Eyebrow color={C.volt}>OVERVIEW</Eyebrow>
                 <View style={s.metrics}>
                   <Metric label="Make rate" value={`${Math.round(overview.global_make_rate)}%`} />
                   <Metric label="Attempts" value={String(overview.total_attempts)} />
@@ -164,14 +164,14 @@ export default function PteFlowScreen() {
               </Card>
             ) : null}
 
-            <Card>
-              <Eyebrow>THIS WEEK</Eyebrow>
+            <Card accent={C.volt}>
+              <Eyebrow color={C.volt}>THIS WEEK</Eyebrow>
               <WeekRow days={week} />
             </Card>
 
             {ratings.length > 1 ? (
-              <Card>
-                <Eyebrow>PTE TREND</Eyebrow>
+              <Card accent={C.volt}>
+                <Eyebrow color={C.volt}>PTE TREND</Eyebrow>
                 <RatingLine ratings={ratings} />
               </Card>
             ) : null}
@@ -227,7 +227,15 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
   content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, gap: SPACE.lg },
   header: { gap: 8 },
-  title: { fontFamily: F.heading, fontSize: 34, lineHeight: 38, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 34,
+    lineHeight: 38,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.35),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
   error: { fontFamily: F.body, color: C.offwhite },
   retry: { fontFamily: F.bold, color: C.volt, marginTop: 8 },
@@ -237,7 +245,7 @@ const s = StyleSheet.create({
   cue: { fontFamily: F.mono, fontSize: 12, color: C.volt },
   metrics: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.md },
   metric: { width: "45%", gap: 2 },
-  metricValue: { fontFamily: F.monoBold, fontSize: 22, color: C.offwhite },
+  metricValue: { fontFamily: F.monoBold, fontSize: 24, color: C.volt },
   metricLabel: { fontFamily: F.mono, fontSize: 11, color: C.dim, textTransform: "uppercase" },
   section: { gap: SPACE.md },
   sectionTitle: {
@@ -250,7 +258,7 @@ const s = StyleSheet.create({
   trickRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   trickName: { fontFamily: F.bold, fontSize: 16, color: C.offwhite },
   trickMeta: { fontFamily: F.mono, fontSize: 11, color: C.dim },
-  arrow: { fontFamily: F.bold, color: C.dim, fontSize: 18 },
+  arrow: { fontFamily: F.bold, color: C.volt, fontSize: 18 },
   cards: { gap: SPACE.md },
   link: { fontFamily: F.bold, color: C.volt, fontSize: 14 },
 });

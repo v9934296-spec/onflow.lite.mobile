@@ -28,7 +28,7 @@ import {
   formatTrickDisplay,
   pickActiveBattle,
 } from "../src/progressionAdapter";
-import { C, F, SPACE } from "../src/theme";
+import { C, F, SPACE, withOpacity } from "../src/theme";
 import { Card, Eyebrow, SkeletonLines } from "../src/ui";
 
 type LoadState = "loading" | "ready" | "error";
@@ -163,8 +163,21 @@ export default function Home() {
             ) : null}
 
             {overview ? (
-              <Card>
-                <Eyebrow>PROGRESS SUMMARY</Eyebrow>
+              <Card accent={C.volt}>
+                <Eyebrow color={C.volt}>PROGRESS SUMMARY</Eyebrow>
+                <View style={s.rateScale}>
+                  <View style={s.rateTrack}>
+                    <View
+                      style={[
+                        s.rateFill,
+                        {
+                          width: `${Math.max(0, Math.min(100, Math.round(overview.global_make_rate)))}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <Text style={s.rateScaleValue}>{Math.round(overview.global_make_rate)}%</Text>
+                </View>
                 <View style={s.metrics}>
                   <Metric label="Make rate" value={`${Math.round(overview.global_make_rate)}%`} />
                   <Metric label="Sessions" value={String(overview.total_sessions)} />
@@ -224,7 +237,21 @@ function QuickLink({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [s.quick, pressed && { opacity: 0.8 }, accent ? { borderColor: accent } : null]}
+      style={({ pressed }) => [
+        s.quick,
+        pressed && { opacity: 0.8 },
+        accent
+          ? {
+              borderColor: accent,
+              backgroundColor: withOpacity(accent, 0.12),
+              shadowColor: accent,
+              shadowOpacity: 0.45,
+              shadowRadius: 10,
+              shadowOffset: { width: 0, height: 0 },
+              elevation: 4,
+            }
+          : null,
+      ]}
     >
       <Text style={[s.quickText, accent ? { color: accent } : null]}>{label}</Text>
     </Pressable>
@@ -236,16 +263,34 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   content: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, gap: SPACE.lg },
   topline: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  link: { fontFamily: F.bold, fontSize: 11, letterSpacing: 0.8, color: C.dim },
+  link: { fontFamily: F.bold, fontSize: 11, letterSpacing: 0.8, color: C.volt },
   account: { fontFamily: F.mono, fontSize: 11, color: C.dim, marginTop: -8 },
   error: { fontFamily: F.body, color: C.offwhite, fontSize: 14 },
   retry: { fontFamily: F.bold, color: C.volt, marginTop: 8 },
   cardTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite, lineHeight: 28 },
   cardSub: { fontFamily: F.body, fontSize: 14, lineHeight: 20, color: C.dim },
   cue: { fontFamily: F.mono, fontSize: 12, color: C.volt, marginTop: 4 },
+  rateScale: { flexDirection: "row", alignItems: "center", gap: SPACE.md, marginBottom: 4 },
+  rateTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.charcoal4,
+    overflow: "hidden",
+  },
+  rateFill: {
+    height: "100%",
+    borderRadius: 4,
+    backgroundColor: C.volt,
+    shadowColor: C.volt,
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  rateScaleValue: { fontFamily: F.monoBold, fontSize: 18, color: C.volt, minWidth: 48, textAlign: "right" },
   metrics: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.md },
   metric: { width: "45%", gap: 2 },
-  metricValue: { fontFamily: F.monoBold, fontSize: 22, color: C.offwhite },
+  metricValue: { fontFamily: F.monoBold, fontSize: 26, color: C.volt },
   metricLabel: { fontFamily: F.mono, fontSize: 11, color: C.dim, textTransform: "uppercase" },
   section: { gap: SPACE.md },
   sectionTitle: {
@@ -259,10 +304,11 @@ const s = StyleSheet.create({
   quickLinks: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.sm },
   quick: {
     borderWidth: 1,
-    borderColor: C.charcoal4,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: C.charcoal5,
+    backgroundColor: C.charcoal,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
   },
   quickText: { fontFamily: F.bold, fontSize: 12, color: C.offwhite, letterSpacing: 0.4 },
 });

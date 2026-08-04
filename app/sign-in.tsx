@@ -16,7 +16,7 @@ import { createEmailSession, signInWithApple } from "../src/api/authApi";
 import { isExpoApiUrlConfigured, missingApiBaseUserMessage } from "../src/api/config";
 import { useAuth } from "../src/auth/authContext";
 import { saveOnflowSession } from "../src/auth/onflowSession";
-import { C, F } from "../src/theme";
+import { C, F, withOpacity } from "../src/theme";
 import { Btn, Eyebrow, Field } from "../src/ui";
 
 const ENABLE_EMAIL_AUTH = typeof __DEV__ !== "undefined" && __DEV__;
@@ -186,9 +186,16 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
   scroll: { paddingHorizontal: 24, gap: 16 },
   header: { gap: 8, marginBottom: 8 },
-  h1: { fontFamily: F.heading, fontSize: 36, color: C.offwhite },
+  h1: {
+    fontFamily: F.heading,
+    fontSize: 36,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.35),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 20, color: C.dim },
-  warn: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.amber, marginTop: 4 },
+  warn: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.red, marginTop: 4 },
   error: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.red, textAlign: "center" },
   appleBtn: { width: "100%", height: 48 },
   emailBlock: { gap: 12, marginTop: 8 },

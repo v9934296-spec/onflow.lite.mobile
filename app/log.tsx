@@ -77,15 +77,39 @@ export default function Log() {
         <Eyebrow>CLIP LOG · UPDATED {dateLabel}</Eyebrow>
 
         {userLog.length > 0 ? (
-          <Card>
+          <Card accent={C.volt}>
             <Eyebrow color={C.volt}>SELF-REPORTED SESSION SUMMARY</Eyebrow>
+            <Text style={s.summaryHero}>{summary.landedPct}%</Text>
+            <Text style={s.summaryHeroLabel}>LANDED</Text>
+            <View style={s.rateTrack}>
+              <View
+                style={[
+                  s.rateFill,
+                  {
+                    width: `${summary.landedPct}%`,
+                    backgroundColor: summary.landedPct >= 50 ? C.volt : C.red,
+                  },
+                ]}
+              />
+            </View>
+            <View style={s.splitTrack}>
+              {(summary.landedCount > 0 || summary.missedCount > 0) ? (
+                <>
+                  <View style={[s.splitLanded, { flex: Math.max(summary.landedCount, 0.001) }]} />
+                  <View style={[s.splitMissed, { flex: Math.max(summary.missedCount, 0.001) }]} />
+                </>
+              ) : (
+                <View style={s.splitEmpty} />
+              )}
+            </View>
             <Text style={s.summaryLine}>
               <Text style={{ color: C.offwhite }}>{summary.totalAttempts}</Text> attempts ·{" "}
-              <Text style={{ color: C.volt }}>{summary.landedPct}%</Text> landed ·{" "}
+              <Text style={{ color: C.volt }}>{summary.landedCount}</Text> landed ·{" "}
+              <Text style={{ color: C.red }}>{summary.missedCount}</Text> missed ·{" "}
               <Text style={{ color: C.offwhite }}>{summary.practicedTricks.length}</Text> tricks
             </Text>
             <Text style={s.summarySub}>
-              {summary.landedCount} landed · {summary.missedCount} missed · {summary.unsureCount} unsure
+              {summary.unsureCount} unsure
             </Text>
             {summary.practicedTricks.length > 0 ? (
               <Text style={s.summarySub}>Practiced: {summary.practicedTricks.join(", ")}</Text>
@@ -102,7 +126,7 @@ export default function Log() {
         ) : null}
 
         {attempts.length > 0 ? (
-          <Card>
+          <Card accent={C.volt}>
             <Eyebrow color={C.volt}>SELF-REPORTED PROGRESS · LAST 7 DAYS</Eyebrow>
             <WeekRow days={week} />
             {bestStreak ? (
@@ -124,7 +148,7 @@ export default function Log() {
         ) : (
           <>
             {ratings.length > 0 ? (
-              <Card>
+              <Card accent={C.volt}>
                 <Eyebrow color={C.volt}>
                   {ratingsAreSamples
                     ? "SAMPLE P.T.E. · DEMO CLIP RATINGS"
@@ -135,7 +159,7 @@ export default function Log() {
             ) : null}
 
             {latest?.analysis.breakdown ? (
-              <Card>
+              <Card accent={C.volt}>
                 <Eyebrow color={C.volt}>
                   {latest.analysis.source === "sample" ? "SAMPLE · " : "LAST CLIP · "}
                   {(latest.analysis.trickOnFilm ?? latest.analysis.trickCalled).toUpperCase()} BREAKDOWN
@@ -149,9 +173,21 @@ export default function Log() {
               const trickStreak =
                 entry.analysis.source === "user" ? getTrickStreak(attempts, trick) : 0;
               const outcome = outcomeLabel(entry);
+              const accent =
+                outcome === "landed" ? C.volt : outcome === "missed" ? C.red : C.charcoal4;
 
               return (
-                <View key={entry.id} style={s.logCard}>
+                <View
+                  key={entry.id}
+                  style={[
+                    s.logCard,
+                    {
+                      borderLeftColor: accent,
+                      shadowColor: outcome === "landed" || outcome === "missed" ? accent : "#000",
+                      shadowOpacity: outcome === "landed" || outcome === "missed" ? 0.25 : 0,
+                    },
+                  ]}
+                >
                   {entry.analysis.rating !== null ? (
                     <Text style={s.logRating}>{entry.analysis.rating.toFixed(1)}</Text>
                   ) : outcome === "landed" ? (
@@ -159,7 +195,7 @@ export default function Log() {
                   ) : outcome === "missed" ? (
                     <Text style={[s.logRating, { color: C.red, fontSize: 14 }]}>✗</Text>
                   ) : outcome === "unsure" ? (
-                    <Text style={[s.logRating, { color: C.amber, fontSize: 14 }]}>?</Text>
+                    <Text style={[s.logRating, { color: C.dim, fontSize: 14 }]}>?</Text>
                   ) : (
                     <Text style={[s.logRating, { color: C.dim, fontSize: 14 }]}>N/R</Text>
                   )}
@@ -219,6 +255,27 @@ const s = StyleSheet.create({
   empty: { paddingVertical: 60, gap: 10 },
   emptyTitle: { fontFamily: F.heading, fontSize: 24, color: C.offwhite },
   emptySub: { fontFamily: F.body, fontSize: 14, lineHeight: 20, color: C.dim },
+  summaryHero: { fontFamily: F.heading, fontSize: 48, lineHeight: 52, color: C.volt, marginTop: 2 },
+  summaryHeroLabel: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1.2, color: C.volt, marginBottom: 8 },
+  rateTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.charcoal4,
+    overflow: "hidden",
+    marginBottom: 8,
+  },
+  rateFill: { height: "100%", borderRadius: 4 },
+  splitTrack: {
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+    flexDirection: "row",
+    backgroundColor: C.charcoal4,
+    marginBottom: 8,
+  },
+  splitLanded: { backgroundColor: C.volt },
+  splitMissed: { backgroundColor: C.red },
+  splitEmpty: { flex: 1, backgroundColor: C.charcoal4 },
   summaryLine: { fontFamily: F.body, fontSize: 15, color: C.dim, marginTop: 4 },
   summarySub: { fontFamily: F.mono, fontSize: 10, color: C.dim, marginTop: 4 },
   tallyRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10, flexWrap: "wrap" },
@@ -228,17 +285,22 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 12,
-    backgroundColor: C.charcoal2,
-    borderWidth: 1,
+    backgroundColor: C.charcoal,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.charcoal4,
+    borderLeftWidth: 3,
+    borderLeftColor: C.volt,
     borderRadius: 10,
     padding: 14,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 2,
   },
-  logRating: { fontFamily: F.heading, fontSize: 20, color: C.volt, minWidth: 44 },
+  logRating: { fontFamily: F.heading, fontSize: 22, color: C.volt, minWidth: 44 },
   logTrick: { fontFamily: F.bold, fontSize: 14, color: C.offwhite },
   logMeta: { fontFamily: F.mono, fontSize: 10, color: C.dim },
   logNotes: { fontFamily: F.body, fontSize: 12, color: C.dim, lineHeight: 17 },
   engineStamp: { fontFamily: F.mono, fontSize: 8, color: C.dim },
-  deleteBtn: { fontFamily: F.mono, fontSize: 14, color: C.dim, padding: 4 },
+  deleteBtn: { fontFamily: F.mono, fontSize: 14, color: C.red, padding: 4 },
   footer: { paddingHorizontal: 24, paddingTop: 10, gap: 10, backgroundColor: C.charcoal },
 });

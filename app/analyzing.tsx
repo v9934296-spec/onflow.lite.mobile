@@ -8,7 +8,7 @@ import { pollClipJobUntilDone } from "../src/analysis/pollClipJob";
 import { useAccount } from "../src/auth/accountContext";
 import { getFlowRedirect } from "../src/flowGuard";
 import { useSession } from "../src/session";
-import { C, F } from "../src/theme";
+import { C, F, withOpacity } from "../src/theme";
 import { Btn } from "../src/ui";
 
 const LOCAL_STEPS = ["uploading clip", "reading frames", "checking evidence", "writing it straight"];
@@ -194,11 +194,30 @@ export default function Analyzing() {
 
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal, justifyContent: "center", paddingHorizontal: 24 },
-  trick: { fontFamily: F.heading, fontSize: 24, color: C.offwhite },
+  trick: {
+    fontFamily: F.heading,
+    fontSize: 28,
+    color: C.volt,
+    textShadowColor: withOpacity(C.volt, 0.4),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
   called: { fontFamily: F.mono, fontSize: 11, color: C.dim, letterSpacing: 1, marginTop: 4 },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
   box: { fontFamily: F.mono, fontSize: 13 },
   stepText: { fontFamily: F.mono, fontSize: 13, color: C.offwhite },
-  errorBlock: { gap: 12, marginTop: 20 },
+  errorBlock: {
+    gap: 12,
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: C.charcoal,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: withOpacity(C.red, 0.45),
+    shadowColor: C.red,
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+  },
   error: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.red },
 });

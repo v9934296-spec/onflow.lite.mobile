@@ -17,7 +17,8 @@ import {
   type ProgressionTimelineItem,
 } from "../src/api/progressionApi";
 import { formatTrickDisplay } from "../src/progressionAdapter";
-import { C, F, RADIUS, SPACE } from "../src/theme";
+import { RatingLine } from "../src/charts";
+import { C, F, RADIUS, SPACE, withOpacity } from "../src/theme";
 import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 
 function formatDate(iso: string | null): string {
@@ -66,6 +67,13 @@ export default function SessionHistory() {
     void load(1, "replace");
   }, [load]);
 
+  const maxAttempts = items.length > 0 ? Math.max(...items.map((i) => i.attempt_count), 1) : 1;
+  const pteSeries = items
+    .map((i) => i.best_pte_score)
+    .filter((v): v is number => v != null)
+    .slice(0, 12)
+    .map((v) => (v > 10 ? Math.min(10, v / 10) : Math.max(0, Math.min(10, v))));
+
   return (
     <View style={[s.screen, { paddingTop: insets.top + 12, paddingBottom: insets.bottom }]}>
       <View style={s.content}>
@@ -103,6 +111,29 @@ export default function SessionHistory() {
               />
             }
           >
+            <Card accent={C.volt}>
+              <Eyebrow color={C.volt}>ACTIVITY</Eyebrow>
+              <View style={s.heatRow}>
+                {items.slice(0, 14).map((item, index) => {
+                  const intensity = Math.min(1, item.attempt_count / maxAttempts);
+                  return (
+                    <View
+                      key={`heat-${item.session_id}-${index}`}
+                      style={[
+                        s.heatCell,
+                        {
+                          backgroundColor:
+                            intensity <= 0
+                              ? C.charcoal4
+                              : withOpacity(C.volt, 0.2 + intensity * 0.8),
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
+              {pteSeries.length > 1 ? <RatingLine ratings={pteSeries} /> : null}
+            </Card>
             {items.map((item, index) => (
               <Pressable
                 key={`${item.session_id}-${index}`}
@@ -112,7 +143,7 @@ export default function SessionHistory() {
                 }}
                 style={({ pressed }) => [s.row, pressed && { opacity: 0.72 }]}
               >
-                <View style={{ flex: 1, gap: 4 }}>
+                <View style={{ flex: 1, gap: 6 }}>
                   <Text style={s.rowTitle}>
                     {item.focus_trick
                       ? formatTrickDisplay(item.focus_trick)
@@ -124,6 +155,16 @@ export default function SessionHistory() {
                     {item.attempt_count ? ` · ${item.attempt_count} attempts` : ""}
                     {item.clips_count ? ` · ${item.clips_count} clips` : ""}
                   </Text>
+                  <View style={s.rowScale}>
+                    <View
+                      style={[
+                        s.rowScaleFill,
+                        {
+                          width: `${Math.round((item.attempt_count / maxAttempts) * 100)}%`,
+                        },
+                      ]}
+                    />
+                  </View>
                 </View>
                 <Text style={s.chevron}>›</Text>
               </Pressable>
@@ -154,6 +195,8 @@ const s = StyleSheet.create({
   centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
   emptyTitle: { fontFamily: F.bold, fontSize: 17, color: C.offwhite },
   error: { fontFamily: F.body, fontSize: 13, lineHeight: 18, color: C.red, textAlign: "center" },
+  heatRow: { flexDirection: "row", gap: 4, marginTop: 4 },
+  heatCell: { flex: 1, height: 18, borderRadius: 3 },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -161,11 +204,24 @@ const s = StyleSheet.create({
     borderRadius: RADIUS.lg,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    backgroundColor: C.charcoal2,
+    backgroundColor: C.charcoal,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal4,
     borderLeftWidth: 3,
     borderLeftColor: C.volt,
   },
   rowTitle: { fontFamily: F.bold, fontSize: 15, color: C.offwhite },
   rowSub: { fontFamily: F.body, fontSize: 12, color: C.dim },
-  chevron: { fontFamily: F.body, fontSize: 24, color: C.dim },
+  rowScale: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.charcoal4,
+    overflow: "hidden",
+  },
+  rowScaleFill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: C.volt,
+  },
+  chevron: { fontFamily: F.body, fontSize: 24, color: C.volt },
 });

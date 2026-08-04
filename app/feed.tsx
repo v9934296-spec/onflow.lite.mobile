@@ -13,7 +13,7 @@ import { AppNav } from "../src/components/AppNav";
 import { FeedCard } from "../src/components/FeedCard";
 import { track } from "../src/analytics";
 import { useFeed } from "../src/feed/useFeed";
-import { C, F, SPACE } from "../src/theme";
+import { C, F, SPACE, withOpacity } from "../src/theme";
 import { Btn, Card, Eyebrow } from "../src/ui";
 
 export default function FeedScreen() {
@@ -56,13 +56,13 @@ export default function FeedScreen() {
             <Text style={s.hint}>Loading feed…</Text>
           </View>
         ) : error ? (
-          <View style={s.centered}>
+          <View style={[s.centered, s.errorCard]}>
             <Text style={s.error}>{error}</Text>
-            <Btn label="Retry" variant="ghost" onPress={() => void retry()} />
+            <Btn label="Retry" variant="red" onPress={() => void retry()} />
           </View>
         ) : showEmpty ? (
           <View style={s.centered}>
-            <Card accent={C.volt}>
+            <Card accent={C.volt} style={s.emptyCard}>
               <Eyebrow color={C.volt}>YOUR CIRCLE</Eyebrow>
               <Text style={s.emptyTitle}>Nothing fake to fill the feed.</Text>
               <Text style={s.hint}>
@@ -105,10 +105,36 @@ export default function FeedScreen() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
   content: { flex: 1, paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, gap: SPACE.md },
-  title: { fontFamily: F.heading, fontSize: 34, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 34,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.35),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
   centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
   hint: { fontFamily: F.body, fontSize: 13, color: C.dim, textAlign: "center", lineHeight: 19 },
+  emptyCard: {
+    backgroundColor: C.charcoal,
+    shadowColor: C.volt,
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
   emptyTitle: { fontFamily: F.bold, fontSize: 17, color: C.offwhite, marginTop: 4 },
+  errorCard: {
+    backgroundColor: C.charcoal,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: withOpacity(C.red, 0.45),
+    borderRadius: 12,
+    padding: SPACE.lg,
+    shadowColor: C.red,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+  },
   error: { fontFamily: F.body, fontSize: 13, color: C.red, textAlign: "center" },
 });

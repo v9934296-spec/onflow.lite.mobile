@@ -6,7 +6,7 @@ import { track } from "../src/analytics";
 import { updateSkateSession } from "../src/api/sessionApi";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSession } from "../src/session";
-import { C, F } from "../src/theme";
+import { C, F, withOpacity } from "../src/theme";
 import { Btn, Eyebrow, Field } from "../src/ui";
 import { filterTrickLibraryByQuery } from "../src/tricks/trickSearch";
 import { canonicalTrickName } from "../src/tricks/trickFormat";
@@ -99,13 +99,48 @@ export default function TrickPicker() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 12 },
   centered: { alignItems: "center", justifyContent: "center" },
-  title: { fontFamily: F.heading, fontSize: 28, lineHeight: 32, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 28,
+    lineHeight: 32,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.3),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  chip: { borderWidth: StyleSheet.hairlineWidth, borderColor: C.charcoal3, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 9, backgroundColor: C.charcoal2 },
-  chipActive: { borderColor: C.volt, backgroundColor: C.charcoal3 },
+  chip: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal5,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    backgroundColor: C.charcoal,
+  },
+  chipActive: {
+    borderColor: C.red,
+    backgroundColor: withOpacity(C.red, 0.14),
+    shadowColor: C.red,
+    shadowOpacity: 0.45,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
+  },
   chipText: { fontFamily: F.body, fontSize: 13, color: C.offwhite },
-  chipTextActive: { color: C.volt, fontFamily: F.bold },
-  preview: { borderLeftWidth: 4, borderLeftColor: C.volt, paddingLeft: 12, gap: 4 },
-  previewText: { fontFamily: F.heading, fontSize: 20, color: C.offwhite },
+  chipTextActive: { color: C.red, fontFamily: F.bold },
+  preview: {
+    borderLeftWidth: 4,
+    borderLeftColor: C.volt,
+    paddingLeft: 12,
+    gap: 4,
+    backgroundColor: C.charcoal,
+    borderRadius: 8,
+    paddingVertical: 8,
+    shadowColor: C.volt,
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  previewText: { fontFamily: F.heading, fontSize: 20, color: C.volt },
 });

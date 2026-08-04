@@ -17,7 +17,7 @@ import { SAMPLE_CLIPS, analyzeSample, analyzeUserClip } from "../src/engine";
 import { getFlowRedirect } from "../src/flowGuard";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
 import { useSession } from "../src/session";
-import { C, F } from "../src/theme";
+import { C, F, withOpacity } from "../src/theme";
 import { Btn, Eyebrow } from "../src/ui";
 
 function resolveMimeType(asset: ImagePicker.ImagePickerAsset): string {
@@ -258,11 +258,29 @@ export default function Capture() {
 const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal, paddingHorizontal: 24, gap: 14 },
   header: { gap: 7 },
-  title: { fontFamily: F.heading, fontSize: 32, lineHeight: 36, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 32,
+    lineHeight: 36,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.3),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+  },
   sub: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
-  modeHint: { fontFamily: F.body, fontSize: 12, lineHeight: 18, color: C.amber },
+  modeHint: { fontFamily: F.body, fontSize: 12, lineHeight: 18, color: C.red },
   status: { fontFamily: F.mono, fontSize: 11, color: C.volt },
-  cameraCard: { borderRadius: 16, padding: 20, gap: 8, backgroundColor: C.volt },
+  cameraCard: {
+    borderRadius: 16,
+    padding: 20,
+    gap: 8,
+    backgroundColor: C.volt,
+    shadowColor: C.volt,
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
   cameraTitle: { fontFamily: F.heading, fontSize: 26, color: C.charcoal },
   cameraCopy: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.charcoal },
   cameraAction: { fontFamily: F.bold, fontSize: 13, color: C.charcoal, marginTop: 4 },
@@ -270,12 +288,26 @@ const s = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     gap: 8,
-    backgroundColor: C.charcoal2,
+    backgroundColor: C.charcoal,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: withOpacity(C.red, 0.4),
     borderLeftWidth: 4,
     borderLeftColor: C.red,
+    shadowColor: C.red,
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
   libraryTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite },
-  truthBox: { gap: 6, paddingVertical: 8 },
+  truthBox: {
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: C.charcoal,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal4,
+  },
   truth: { fontFamily: F.body, fontSize: 12, lineHeight: 18, color: C.dim },
   pressed: { opacity: 0.7 },
 });

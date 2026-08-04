@@ -32,7 +32,7 @@ import {
   formatTrickDisplay,
   pickActiveBattle,
 } from "../src/progressionAdapter";
-import { C, F, RADIUS, SPACE } from "../src/theme";
+import { C, F, RADIUS, SPACE, withOpacity } from "../src/theme";
 import { Btn, Card, Eyebrow, SkeletonLines } from "../src/ui";
 
 export default function FlowScreen() {
@@ -145,6 +145,9 @@ export default function FlowScreen() {
         }
       >
         <View style={s.header}>
+          <Eyebrow color={hasActiveSession ? (isBattle ? C.red : C.volt) : C.volt}>
+            {hasActiveSession ? (isBattle ? "BATTLE LIVE" : "SESSION LIVE") : "ONFLOW"}
+          </Eyebrow>
           <Text style={s.title}>Flow</Text>
           <Text style={s.sub}>
             {hasActiveSession
@@ -195,12 +198,12 @@ export default function FlowScreen() {
 
             {lastRecap ? (
               <Card
-                accent={C.muted}
+                accent={C.volt}
                 onPress={() =>
                   router.push(`/recap?sessionId=${encodeURIComponent(lastRecap.session_id)}` as never)
                 }
               >
-                <Eyebrow>LAST RECAP</Eyebrow>
+                <Eyebrow color={C.volt}>LAST RECAP</Eyebrow>
                 <Text style={s.modeTitle}>
                   {lastRecap.focus_trick
                     ? formatTrickDisplay(lastRecap.focus_trick)
@@ -233,9 +236,25 @@ export default function FlowScreen() {
               </View>
               <Text style={s.trick}>{selectedTrick?.canonicalName ?? "Choose a trick"}</Text>
               <Text style={s.stats}>
-                {counts.landed} landed · {counts.missed} missed · {counts.total} attempts
-                {landRate != null ? ` · ${landRate}%` : ""}
+                <Text style={{ color: C.volt }}>{counts.landed}</Text> landed ·{" "}
+                <Text style={{ color: C.red }}>{counts.missed}</Text> missed · {counts.total} attempts
+                {landRate != null ? (
+                  <Text style={{ color: landRate >= 50 ? C.volt : C.red }}>{` · ${landRate}%`}</Text>
+                ) : null}
               </Text>
+              {landRate != null ? (
+                <View style={s.rateTrack}>
+                  <View
+                    style={[
+                      s.rateFill,
+                      {
+                        width: `${landRate}%`,
+                        backgroundColor: landRate >= 50 ? C.volt : C.red,
+                      },
+                    ]}
+                  />
+                </View>
+              ) : null}
             </Card>
 
             {selectedTrick ? (
@@ -298,35 +317,79 @@ const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.charcoal },
   content: { paddingHorizontal: SPACE.lg, paddingTop: SPACE.md, paddingBottom: SPACE.xl, gap: SPACE.lg },
   header: { gap: SPACE.sm },
-  title: { fontFamily: F.heading, fontSize: 34, lineHeight: 38, color: C.offwhite },
+  title: {
+    fontFamily: F.heading,
+    fontSize: 34,
+    lineHeight: 38,
+    color: C.offwhite,
+    textShadowColor: withOpacity(C.volt, 0.35),
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12,
+  },
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
   loading: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 20 },
   modeGrid: { gap: SPACE.md },
   modeCard: {
-    backgroundColor: C.charcoal2,
+    backgroundColor: C.charcoal,
     borderRadius: RADIUS.lg,
     padding: SPACE.xl,
     gap: SPACE.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal4,
     borderLeftWidth: 3,
     borderLeftColor: C.volt,
+    shadowColor: C.volt,
+    shadowOpacity: 0.22,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3,
   },
-  battleCard: { borderLeftColor: C.red },
+  battleCard: {
+    borderLeftColor: C.red,
+    borderColor: withOpacity(C.red, 0.35),
+    shadowColor: C.red,
+    shadowOpacity: 0.28,
+  },
   modeTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite },
   modeCopy: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
   modeAction: { fontFamily: F.bold, fontSize: 13, marginTop: 4 },
   activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  trick: { fontFamily: F.heading, fontSize: 26, color: C.offwhite, marginTop: 4 },
+  trick: { fontFamily: F.heading, fontSize: 28, color: C.offwhite, marginTop: 4 },
   stats: { fontFamily: F.mono, fontSize: 11, color: C.dim, marginTop: 4 },
+  rateTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: C.charcoal4,
+    overflow: "hidden",
+    marginTop: 10,
+  },
+  rateFill: { height: "100%", borderRadius: 3 },
   attemptRow: { flexDirection: "row", gap: 12 },
   attemptButton: {
     flex: 1,
     minHeight: 112,
-    borderRadius: 16,
+    borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
   },
-  landButton: { backgroundColor: C.volt },
-  missButton: { backgroundColor: C.charcoal2, borderWidth: 2, borderColor: C.red },
+  landButton: {
+    backgroundColor: C.volt,
+    shadowColor: C.volt,
+    shadowOpacity: 0.55,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+  missButton: {
+    backgroundColor: C.charcoal,
+    borderWidth: 2,
+    borderColor: C.red,
+    shadowColor: C.red,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
   landText: { fontFamily: F.heading, fontSize: 24, color: C.charcoal },
   missText: { fontFamily: F.heading, fontSize: 24, color: C.red },
   error: { fontFamily: F.body, color: C.red, fontSize: 13, textAlign: "center" },

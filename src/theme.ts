@@ -1,26 +1,30 @@
 /** OnFlow production tokens harvested from onflow.skate — presentation only. */
 
 export const C = {
-  charcoal: "#1A1A1C",
-  charcoal900: "#0E0E10",
-  charcoal800: "#15151A",
-  charcoal2: "#242428",
-  charcoal3: "#2E2E33",
-  charcoal4: "#3A3A40",
-  charcoal5: "#5C5C66",
-  volt: "#B8F035",
-  voltSoft: "#CDF768",
-  voltDeep: "#94C12A",
-  red: "#D42B2B",
-  redSoft: "#E55555",
-  redDeep: "#A82020",
-  amber: "#D4A03A",
-  amberSoft: "#E4B85C",
-  offwhite: "#F0EDED",
-  dim: "#8A8A94",
-  muted: "#B8B8C0",
-  /** @deprecated prototype outline — do not use on product surfaces */
-  aluminum: "#3A3A40",
+  charcoal: "#000000",
+  charcoal900: "#000000",
+  charcoal800: "#050505",
+  charcoal2: "#0A0A0A",
+  charcoal3: "#111111",
+  charcoal4: "#1A1A1A",
+  charcoal5: "#222222",
+
+  volt: "#C8FF00",
+  voltSoft: "#D4FF4A",
+  voltDeep: "#A8D900",
+
+  red: "#FF2D2D",
+  redSoft: "#FF5555",
+  redDeep: "#CC1F1F",
+
+  amber: "#FFB020",
+  amberSoft: "#FFC44D",
+
+  offwhite: "#F5F5F5",
+  dim: "#888888",
+  muted: "#AAAAAA",
+
+  aluminum: "#1A1A1A",
 } as const;
 
 export const F = {
