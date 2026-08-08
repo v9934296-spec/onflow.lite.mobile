@@ -63,15 +63,15 @@ export function AppNav() {
 const s = StyleSheet.create({
   wrap: {
     flexDirection: "row",
-    backgroundColor: C.charcoal800,
+    backgroundColor: C.charcoal,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.charcoal4,
+    borderTopColor: C.charcoal5,
     paddingTop: SPACE.sm,
     paddingBottom: 4,
   },
   item: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", gap: 5 },
-  marker: { width: 18, height: 2, borderRadius: 1, backgroundColor: "transparent" },
+  marker: { width: 22, height: 2, borderRadius: 0, backgroundColor: "transparent" },
   markerActive: { backgroundColor: C.volt },
-  label: { fontFamily: F.bold, fontSize: 9, letterSpacing: 0.8, color: C.dim },
+  label: { fontFamily: F.bold, fontSize: 9, letterSpacing: 1, color: C.dim },
   labelActive: { color: C.offwhite },
 });

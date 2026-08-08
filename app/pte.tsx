@@ -23,7 +23,7 @@ import {
 } from "../src/api/progressionApi";
 import { RatingLine } from "../src/charts";
 import { adaptTrickStats, formatTrickDisplay } from "../src/progressionAdapter";
-import { C, F, SPACE, withOpacity } from "../src/theme";
+import { C, F, SPACE } from "../src/theme";
 import { Card, Eyebrow, SkeletonLines, WeekRow } from "../src/ui";
 import type { DaySlot } from "../src/progress";
 
@@ -171,7 +171,7 @@ export default function PteFlowScreen() {
 
             {ratings.length > 1 ? (
               <Card accent={C.volt}>
-                <Eyebrow color={C.volt}>PTE TREND</Eyebrow>
+                <Eyebrow color={C.volt}>PTE / LAST SESSIONS</Eyebrow>
                 <RatingLine ratings={ratings} />
               </Card>
             ) : null}
@@ -232,9 +232,7 @@ const s = StyleSheet.create({
     fontSize: 34,
     lineHeight: 38,
     color: C.offwhite,
-    textShadowColor: withOpacity(C.volt, 0.35),
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
+    letterSpacing: 0.5,
   },
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
   error: { fontFamily: F.body, color: C.offwhite },

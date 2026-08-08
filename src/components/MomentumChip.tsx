@@ -1,6 +1,6 @@
 import React, { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { C, F, RADIUS, SPACE, withOpacity } from "../theme";
+import { C, F, SPACE } from "../theme";
 
 export type MomentumState =
   | "heating_up"
@@ -16,43 +16,34 @@ export type MomentumChipProps = {
 };
 
 const LABELS: Record<MomentumState, string> = {
-  heating_up: "Heating up",
-  stalled: "Stalled",
-  consistent: "Consistent",
-  dialed: "Dialed",
-  breakthrough_close: "Breakthrough close",
+  heating_up: "↑ HEATING UP",
+  stalled: "STALLED",
+  consistent: "CONSISTENT",
+  dialed: "DIALED",
+  breakthrough_close: "↗ BREAKTHROUGH CLOSE",
 };
 
 const COLOR: Record<MomentumState, string> = {
   heating_up: C.amber,
   stalled: C.dim,
   consistent: C.offwhite,
-  dialed: C.voltSoft,
+  dialed: C.volt,
   breakthrough_close: C.amberSoft,
 };
 
 function MomentumChipComponent({ state, size = "md", testID }: MomentumChipProps) {
   const color = COLOR[state];
   const label = LABELS[state];
-  const height = size === "sm" ? 20 : 24;
 
   return (
     <View
       testID={testID}
       accessibilityRole="text"
       accessibilityLabel={`Momentum: ${label}`}
-      style={[
-        styles.container,
-        {
-          minHeight: height,
-          backgroundColor: withOpacity(color, 0.15),
-          paddingHorizontal: SPACE.sm,
-          gap: SPACE.xs,
-        },
-      ]}
+      style={[styles.container, size === "sm" ? styles.sm : null]}
     >
-      <View style={[styles.dot, { backgroundColor: color }]} />
-      <Text style={[styles.label, { color }]}>{label}</Text>
+      <View style={[styles.edge, { backgroundColor: color }]} />
+      <Text style={[styles.label, { color, fontSize: size === "sm" ? 10 : 11 }]}>{label}</Text>
     </View>
   );
 }
@@ -62,13 +53,13 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    borderRadius: RADIUS.pill,
+    gap: SPACE.sm,
   },
-  dot: { width: 6, height: 6, borderRadius: 3 },
+  sm: { gap: 6 },
+  edge: { width: 2, alignSelf: "stretch", minHeight: 12 },
   label: {
-    fontFamily: F.medium,
-    fontSize: 11,
+    fontFamily: F.bold,
+    letterSpacing: 0.8,
     lineHeight: 16,
   },
 });

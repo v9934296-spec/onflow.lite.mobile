@@ -1,15 +1,20 @@
 import React from "react";
 import { View, Text, StyleSheet, useWindowDimensions } from "react-native";
 import Svg, { Polyline, Circle, Line as SvgLine, Text as SvgText } from "react-native-svg";
-import { C, F } from "./theme";
+import { C, F, RADIUS } from "./theme";
 import { BreakdownItem } from "./types";
 
-const CHART_H = 120;
-const PAD_L = 26;
-const PAD_R = 12;
-const PAD_T = 10;
-const PAD_B = 20;
+const CHART_H = 132;
+const PAD_L = 28;
+const PAD_R = 36;
+const PAD_T = 12;
+const PAD_B = 22;
 
+function sessionLabel(i: number): string {
+  return `S${String(i + 1).padStart(2, "0")}`;
+}
+
+/** PTE / session telemetry — paint stroke, latest marker only, S01 labels. */
 export function RatingLine({ ratings, width }: { ratings: number[]; width?: number }) {
   const { width: screenW } = useWindowDimensions();
   const CHART_W = width ?? Math.max(280, screenW - 48);
@@ -21,6 +26,8 @@ export function RatingLine({ ratings, width }: { ratings: number[]; width?: numb
   const y = (v: number) => PAD_T + innerH - (v / 10) * innerH;
 
   const points = ratings.map((v, i) => `${x(i)},${y(v)}`).join(" ");
+  const last = n > 0 ? ratings[n - 1]! : null;
+  const lastI = n - 1;
 
   return (
     <Svg width={CHART_W} height={CHART_H} viewBox={`0 0 ${CHART_W} ${CHART_H}`}>
@@ -31,22 +38,64 @@ export function RatingLine({ ratings, width }: { ratings: number[]; width?: numb
             x2={CHART_W - PAD_R}
             y1={y(tick)}
             y2={y(tick)}
-            stroke={C.charcoal3}
+            stroke={C.charcoal4}
             strokeWidth={1}
-            strokeDasharray="3 3"
+            opacity={tick === 5 ? 0.55 : 0.35}
           />
-          <SvgText x={4} y={y(tick) + 4} fill={C.dim} fontSize={9} fontFamily={F.mono}>
+          <SvgText x={4} y={y(tick) + 3} fill={C.dim} fontSize={9} fontFamily={F.mono}>
             {tick}
           </SvgText>
         </React.Fragment>
       ))}
-      {n > 1 && <Polyline points={points} fill="none" stroke={C.volt} strokeWidth={2} />}
-      {ratings.map((v, i) => (
-        <Circle key={i} cx={x(i)} cy={y(v)} r={4} fill={C.volt} stroke={C.charcoal} strokeWidth={2} />
-      ))}
+
       {ratings.map((_, i) => (
-        <SvgText key={i} x={x(i) - 6} y={CHART_H - 4} fill={C.dim} fontSize={9} fontFamily={F.mono}>
-          C{i + 1}
+        <SvgLine
+          key={`tick-${i}`}
+          x1={x(i)}
+          x2={x(i)}
+          y1={PAD_T + innerH}
+          y2={PAD_T + innerH + 4}
+          stroke={C.charcoal5}
+          strokeWidth={1}
+        />
+      ))}
+
+      {n > 1 ? (
+        <Polyline
+          points={points}
+          fill="none"
+          stroke={C.volt}
+          strokeWidth={2.75}
+          strokeLinejoin="miter"
+          strokeLinecap="butt"
+        />
+      ) : null}
+
+      {last != null && lastI >= 0 ? (
+        <>
+          <Circle cx={x(lastI)} cy={y(last)} r={3.5} fill={C.volt} />
+          <SvgText
+            x={x(lastI) + 8}
+            y={y(last) + 4}
+            fill={C.offwhite}
+            fontSize={11}
+            fontFamily={F.monoBold}
+          >
+            {last.toFixed(1)}
+          </SvgText>
+        </>
+      ) : null}
+
+      {ratings.map((_, i) => (
+        <SvgText
+          key={`lbl-${i}`}
+          x={x(i) - 10}
+          y={CHART_H - 4}
+          fill={i === lastI ? C.offwhite : C.dim}
+          fontSize={9}
+          fontFamily={F.mono}
+        >
+          {sessionLabel(i)}
         </SvgText>
       ))}
     </Svg>
@@ -77,7 +126,13 @@ export function BreakdownBars({ items }: { items: BreakdownItem[] }) {
 const s = StyleSheet.create({
   barRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   barLabel: { fontFamily: F.mono, fontSize: 10, color: C.offwhite, width: 60 },
-  barTrack: { flex: 1, height: 8, backgroundColor: C.charcoal3, borderRadius: 4, overflow: "hidden" },
-  barFill: { height: "100%", borderRadius: 4 },
+  barTrack: {
+    flex: 1,
+    height: 6,
+    backgroundColor: C.charcoal3,
+    borderRadius: RADIUS.xs,
+    overflow: "hidden",
+  },
+  barFill: { height: "100%", borderRadius: RADIUS.xs },
   barValue: { fontFamily: F.mono, fontSize: 10, color: C.dim, width: 26, textAlign: "right" },
 });

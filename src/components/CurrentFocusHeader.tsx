@@ -40,10 +40,10 @@ function CurrentFocusHeaderComponent({ focus, onPress, testID }: CurrentFocusHea
   const body = (
     <View testID={testID} style={styles.container}>
       <Text style={styles.eyebrow}>CURRENT FOCUS</Text>
-      <Text style={styles.title}>{focus.display_name}</Text>
+      <Text style={styles.title}>{focus.display_name.toUpperCase()}</Text>
       <View style={styles.metaRow}>
         {focus.battle_duration_days != null ? (
-          <Text style={styles.meta}>Day {focus.battle_duration_days}</Text>
+          <Text style={styles.meta}>DAY {focus.battle_duration_days}</Text>
         ) : null}
         {focus.momentum_state ? <MomentumChip state={focus.momentum_state} size="sm" /> : null}
       </View>

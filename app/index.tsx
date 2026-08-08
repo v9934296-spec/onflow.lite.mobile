@@ -239,21 +239,16 @@ function QuickLink({
       onPress={onPress}
       style={({ pressed }) => [
         s.quick,
-        pressed && { opacity: 0.8 },
+        pressed && { opacity: 0.75 },
         accent
           ? {
               borderColor: accent,
-              backgroundColor: withOpacity(accent, 0.12),
-              shadowColor: accent,
-              shadowOpacity: 0.45,
-              shadowRadius: 10,
-              shadowOffset: { width: 0, height: 0 },
-              elevation: 4,
+              backgroundColor: withOpacity(accent, 0.1),
             }
           : null,
       ]}
     >
-      <Text style={[s.quickText, accent ? { color: accent } : null]}>{label}</Text>
+      <Text style={[s.quickText, accent ? { color: accent } : null]}>{label.toUpperCase()}</Text>
     </Pressable>
   );
 }
@@ -273,19 +268,15 @@ const s = StyleSheet.create({
   rateScale: { flexDirection: "row", alignItems: "center", gap: SPACE.md, marginBottom: 4 },
   rateTrack: {
     flex: 1,
-    height: 8,
-    borderRadius: 4,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: C.charcoal4,
     overflow: "hidden",
   },
   rateFill: {
     height: "100%",
-    borderRadius: 4,
+    borderRadius: 2,
     backgroundColor: C.volt,
-    shadowColor: C.volt,
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 0 },
   },
   rateScaleValue: { fontFamily: F.monoBold, fontSize: 18, color: C.volt, minWidth: 48, textAlign: "right" },
   metrics: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.md },
@@ -301,14 +292,21 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
   },
   trickRow: { gap: SPACE.md, paddingRight: SPACE.lg },
-  quickLinks: { flexDirection: "row", flexWrap: "wrap", gap: SPACE.sm },
-  quick: {
-    borderWidth: 1,
-    borderColor: C.charcoal5,
-    backgroundColor: C.charcoal,
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+  quickLinks: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACE.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.charcoal4,
+    paddingTop: SPACE.md,
   },
-  quickText: { fontFamily: F.bold, fontSize: 12, color: C.offwhite, letterSpacing: 0.4 },
+  quick: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal5,
+    backgroundColor: "transparent",
+    borderRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  quickText: { fontFamily: F.bold, fontSize: 11, color: C.muted, letterSpacing: 0.6 },
 });

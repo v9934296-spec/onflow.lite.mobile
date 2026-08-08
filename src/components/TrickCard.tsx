@@ -1,7 +1,7 @@
 import React, { memo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { MomentumChip, type MomentumState } from "./MomentumChip";
-import { C, F, RADIUS, SPACE, withOpacity } from "../theme";
+import { C, F, RADIUS, SPACE } from "../theme";
 
 export type TrickSummary = {
   trick_id: string;
@@ -20,28 +20,40 @@ export type TrickCardProps = {
 };
 
 function TrickCardComponent({ trick, onPress, showMomentum = true, testID }: TrickCardProps) {
+  const battleLabel =
+    trick.battle_status === "active"
+      ? "BATTLE //"
+      : trick.battle_status === "won"
+        ? "WON //"
+        : null;
+
   return (
     <Pressable
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={`${trick.display_name} trick card`}
       onPress={onPress}
-      style={({ pressed }) => [styles.container, pressed && { opacity: 0.9 }]}
+      style={({ pressed }) => [styles.container, pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] }]}
     >
-      {trick.battle_status === "active" ? (
-        <View style={[styles.battleChip, { backgroundColor: withOpacity(C.red, 0.2) }]}>
-          <Text style={[styles.battleText, { color: C.red }]}>BATTLE</Text>
-        </View>
-      ) : trick.battle_status === "won" ? (
-        <View style={[styles.battleChip, { backgroundColor: withOpacity(C.volt, 0.2) }]}>
-          <Text style={[styles.battleText, { color: C.volt }]}>WON</Text>
-        </View>
-      ) : null}
+      <View style={styles.cut} />
+      {battleLabel ? (
+        <Text
+          style={[
+            styles.battleText,
+            { color: trick.battle_status === "active" ? C.red : C.volt },
+          ]}
+        >
+          {battleLabel}
+        </Text>
+      ) : (
+        <Text style={styles.battlePlaceholder}> </Text>
+      )}
       <Text style={styles.name} numberOfLines={2}>
-        {trick.display_name}
+        {trick.display_name.toUpperCase()}
       </Text>
+      <View style={styles.sep} />
       <Text style={styles.rate}>{trick.make_rate_pct}%</Text>
-      <Text style={styles.caption}>make rate</Text>
+      <Text style={styles.caption}>LAND RATE</Text>
       {showMomentum && trick.momentum_state ? (
         <MomentumChip state={trick.momentum_state} size="sm" />
       ) : null}
@@ -54,20 +66,51 @@ const styles = StyleSheet.create({
     width: 160,
     minHeight: 180,
     backgroundColor: C.charcoal2,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.charcoal5,
     padding: SPACE.md,
     gap: SPACE.sm,
+    overflow: "hidden",
   },
-  battleChip: {
-    alignSelf: "flex-start",
-    borderRadius: RADIUS.pill,
-    paddingHorizontal: SPACE.sm,
-    paddingVertical: 2,
+  /** Clipped / cut top-right corner */
+  cut: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 0,
+    height: 0,
+    borderStyle: "solid",
+    borderTopWidth: 14,
+    borderLeftWidth: 14,
+    borderTopColor: C.charcoal,
+    borderLeftColor: "transparent",
   },
-  battleText: { fontFamily: F.bold, fontSize: 10, letterSpacing: 0.8 },
-  name: { fontFamily: F.bold, fontSize: 16, color: C.offwhite, lineHeight: 20 },
-  rate: { fontFamily: F.monoBold, fontSize: 28, color: C.volt },
-  caption: { fontFamily: F.mono, fontSize: 10, color: C.dim },
+  battleText: {
+    fontFamily: F.monoBold,
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  battlePlaceholder: { fontFamily: F.mono, fontSize: 10, height: 12 },
+  name: {
+    fontFamily: F.heading,
+    fontSize: 18,
+    color: C.offwhite,
+    lineHeight: 22,
+    letterSpacing: 0.3,
+  },
+  sep: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: C.charcoal5,
+    marginVertical: 2,
+  },
+  rate: { fontFamily: F.monoBold, fontSize: 34, color: C.volt, lineHeight: 36 },
+  caption: {
+    fontFamily: F.mono,
+    fontSize: 10,
+    color: C.dim,
+    letterSpacing: 1,
+  },
 });
 
 export const TrickCard = memo(TrickCardComponent);

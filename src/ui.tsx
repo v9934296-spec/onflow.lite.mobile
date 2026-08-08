@@ -45,7 +45,7 @@ export function Card({
 export function Tag({ kind }: { kind: EvidenceTag | EvidenceClass }) {
   const color = kind === "DETECTED" ? C.volt : kind === "ESTIMATE" ? C.amber : C.red;
   return (
-    <View style={[s.tag, { borderColor: color, backgroundColor: withOpacity(color, 0.12) }]}>
+    <View style={[s.tag, { borderColor: color, backgroundColor: withOpacity(color, 0.1) }]}>
       <Text style={[s.tagText, { color }]}>{kind}</Text>
     </View>
   );
@@ -88,25 +88,9 @@ export function Btn({
       ? { borderWidth: StyleSheet.hairlineWidth, borderColor: C.charcoal5 }
       : variant === "surface"
         ? { borderWidth: 1, borderColor: C.charcoal5 }
-        : null;
-  const glow =
-    variant === "volt"
-      ? {
-          shadowColor: C.volt,
-          shadowOpacity: 0.55,
-          shadowRadius: 12,
-          shadowOffset: { width: 0, height: 0 },
-          elevation: 6,
-        }
-      : variant === "red"
-        ? {
-            shadowColor: C.red,
-            shadowOpacity: 0.5,
-            shadowRadius: 12,
-            shadowOffset: { width: 0, height: 0 },
-            elevation: 6,
-          }
-        : null;
+        : variant === "red"
+          ? { borderWidth: 1, borderColor: C.red }
+          : null;
 
   return (
     <Pressable
@@ -114,9 +98,9 @@ export function Btn({
       disabled={isDisabled}
       style={({ pressed }) => [
         s.btn,
-        { backgroundColor: bg, opacity: isDisabled ? 0.35 : pressed ? 0.78 : 1 },
+        { backgroundColor: bg, opacity: isDisabled ? 0.35 : pressed ? 0.85 : 1 },
+        pressed && !isDisabled ? { transform: [{ scale: 0.98 }] } : null,
         border,
-        glow,
       ]}
     >
       {loading ? (
@@ -163,23 +147,9 @@ export function WeekRow({ days }: { days: DaySlot[] }) {
             style={[
               s.weekDot,
               d.status === "landed"
-                ? {
-                    backgroundColor: C.volt,
-                    shadowColor: C.volt,
-                    shadowOpacity: 0.7,
-                    shadowRadius: 6,
-                    shadowOffset: { width: 0, height: 0 },
-                    elevation: 4,
-                  }
+                ? { backgroundColor: C.volt }
                 : d.status === "bailed"
-                  ? {
-                      backgroundColor: C.red,
-                      shadowColor: C.red,
-                      shadowOpacity: 0.65,
-                      shadowRadius: 6,
-                      shadowOffset: { width: 0, height: 0 },
-                      elevation: 4,
-                    }
+                  ? { backgroundColor: C.red }
                   : { backgroundColor: C.charcoal4 },
             ]}
           />
@@ -205,7 +175,7 @@ export function SkeletonLines({
           style={{
             width,
             height: index === 0 ? 20 : 16,
-            borderRadius: RADIUS.sm,
+            borderRadius: RADIUS.xs,
             backgroundColor: C.charcoal4,
           }}
         />
@@ -223,18 +193,13 @@ const s = StyleSheet.create({
   },
   card: {
     backgroundColor: C.charcoal,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.md,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.charcoal4,
     padding: SPACE.lg,
     gap: SPACE.sm,
     overflow: "hidden",
     position: "relative",
-    shadowColor: C.volt,
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 2,
   },
   edgeAccent: {
     position: "absolute",
@@ -242,13 +207,10 @@ const s = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 2,
-    borderTopLeftRadius: RADIUS.lg,
-    borderBottomLeftRadius: RADIUS.lg,
-    opacity: 0.85,
   },
   tag: {
     borderWidth: 1,
-    borderRadius: RADIUS.sm,
+    borderRadius: RADIUS.xs,
     paddingHorizontal: 7,
     paddingVertical: 3,
     alignSelf: "flex-start",
@@ -256,7 +218,7 @@ const s = StyleSheet.create({
   tagText: { fontFamily: F.mono, fontSize: 9, letterSpacing: 0.8 },
   btn: {
     minHeight: 52,
-    borderRadius: RADIUS.pill,
+    borderRadius: RADIUS.sm,
     paddingHorizontal: 20,
     paddingVertical: 15,
     alignItems: "center",
@@ -267,7 +229,7 @@ const s = StyleSheet.create({
     backgroundColor: C.charcoal800,
     borderLeftWidth: 3,
     borderLeftColor: C.amber,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.sm,
     padding: 10,
   },
   liteBannerText: { fontFamily: F.mono, fontSize: 10, color: C.amber, lineHeight: 15 },
@@ -275,7 +237,7 @@ const s = StyleSheet.create({
     backgroundColor: C.charcoal800,
     borderLeftWidth: 3,
     borderLeftColor: C.red,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.sm,
     padding: 10,
     gap: 4,
   },
@@ -283,7 +245,7 @@ const s = StyleSheet.create({
   storageWarningDismiss: { fontFamily: F.mono, fontSize: 9, color: C.dim },
   weekRow: { flexDirection: "row", justifyContent: "space-between", gap: 4 },
   weekCell: { alignItems: "center", gap: 6, flex: 1 },
-  weekDot: { width: 14, height: 14, borderRadius: 7 },
+  weekDot: { width: 10, height: 10, borderRadius: RADIUS.xs },
   weekLabel: { fontFamily: F.mono, fontSize: 9, color: C.dim },
   field: { gap: 6 },
   fieldLabel: { fontFamily: F.mono, fontSize: 10, color: C.dim, letterSpacing: 0.8 },
@@ -294,7 +256,7 @@ const s = StyleSheet.create({
     backgroundColor: C.charcoal800,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.charcoal5,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.sm,
     paddingHorizontal: 12,
     paddingVertical: 11,
   },

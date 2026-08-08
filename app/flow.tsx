@@ -258,20 +258,28 @@ export default function FlowScreen() {
             </Card>
 
             {selectedTrick ? (
-              <View style={s.attemptRow}>
-                <Pressable
-                  disabled={busy}
-                  onPress={() => void logAttempt(selectedTrick, "landed")}
-                  style={({ pressed }) => [s.attemptButton, s.landButton, (pressed || busy) && s.pressed]}
-                >
-                  <Text style={s.landText}>LAND</Text>
-                </Pressable>
+              <View style={s.attemptStack}>
                 <Pressable
                   disabled={busy}
                   onPress={() => void logAttempt(selectedTrick, "missed")}
-                  style={({ pressed }) => [s.attemptButton, s.missButton, (pressed || busy) && s.pressed]}
+                  style={({ pressed }) => [
+                    s.missButton,
+                    (pressed || busy) && s.pressed,
+                    pressed && !busy ? s.snap : null,
+                  ]}
                 >
                   <Text style={s.missText}>MISS</Text>
+                </Pressable>
+                <Pressable
+                  disabled={busy}
+                  onPress={() => void logAttempt(selectedTrick, "landed")}
+                  style={({ pressed }) => [
+                    s.landButton,
+                    (pressed || busy) && s.pressed,
+                    pressed && !busy ? s.snap : null,
+                  ]}
+                >
+                  <Text style={s.landText}>LAND</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -322,76 +330,75 @@ const s = StyleSheet.create({
     fontSize: 34,
     lineHeight: 38,
     color: C.offwhite,
-    textShadowColor: withOpacity(C.volt, 0.35),
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 12,
+    textTransform: "uppercase",
   },
   sub: { fontFamily: F.body, fontSize: 14, lineHeight: 21, color: C.dim },
   loading: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 20 },
   modeGrid: { gap: SPACE.md },
   modeCard: {
     backgroundColor: C.charcoal,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.sm,
     padding: SPACE.xl,
     gap: SPACE.sm,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.charcoal4,
     borderLeftWidth: 3,
     borderLeftColor: C.volt,
-    shadowColor: C.volt,
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 3,
   },
   battleCard: {
     borderLeftColor: C.red,
-    borderColor: withOpacity(C.red, 0.35),
-    shadowColor: C.red,
-    shadowOpacity: 0.28,
+    borderColor: withOpacity(C.red, 0.4),
   },
-  modeTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite },
+  modeTitle: { fontFamily: F.heading, fontSize: 22, color: C.offwhite, textTransform: "uppercase" },
   modeCopy: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: C.dim },
   modeAction: { fontFamily: F.bold, fontSize: 13, marginTop: 4 },
   activeTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  trick: { fontFamily: F.heading, fontSize: 28, color: C.offwhite, marginTop: 4 },
+  trick: {
+    fontFamily: F.heading,
+    fontSize: 28,
+    color: C.offwhite,
+    marginTop: 4,
+    textTransform: "uppercase",
+  },
   stats: { fontFamily: F.mono, fontSize: 11, color: C.dim, marginTop: 4 },
   rateTrack: {
-    height: 6,
-    borderRadius: 3,
+    height: 4,
+    borderRadius: RADIUS.xs,
     backgroundColor: C.charcoal4,
     overflow: "hidden",
     marginTop: 10,
   },
-  rateFill: { height: "100%", borderRadius: 3 },
-  attemptRow: { flexDirection: "row", gap: 12 },
-  attemptButton: {
-    flex: 1,
-    minHeight: 112,
-    borderRadius: 999,
+  rateFill: { height: "100%", borderRadius: RADIUS.xs },
+  attemptStack: { gap: 10 },
+  missButton: {
+    minHeight: 56,
+    borderRadius: RADIUS.sm,
     alignItems: "center",
     justifyContent: "center",
-  },
-  landButton: {
-    backgroundColor: C.volt,
-    shadowColor: C.volt,
-    shadowOpacity: 0.55,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
-  },
-  missButton: {
     backgroundColor: C.charcoal,
     borderWidth: 2,
     borderColor: C.red,
-    shadowColor: C.red,
-    shadowOpacity: 0.5,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
   },
-  landText: { fontFamily: F.heading, fontSize: 24, color: C.charcoal },
-  missText: { fontFamily: F.heading, fontSize: 24, color: C.red },
+  landButton: {
+    minHeight: 96,
+    borderRadius: RADIUS.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.volt,
+  },
+  landText: {
+    fontFamily: F.heading,
+    fontSize: 28,
+    color: C.charcoal,
+    letterSpacing: 1.2,
+  },
+  missText: {
+    fontFamily: F.heading,
+    fontSize: 20,
+    color: C.red,
+    letterSpacing: 1,
+  },
   error: { fontFamily: F.body, color: C.red, fontSize: 13, textAlign: "center" },
-  pressed: { opacity: 0.72 },
+  pressed: { opacity: 0.85 },
+  snap: { transform: [{ scale: 0.97 }] },
 });

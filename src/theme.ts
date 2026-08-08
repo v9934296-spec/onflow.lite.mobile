@@ -1,4 +1,4 @@
-/** OnFlow production tokens harvested from onflow.skate — presentation only. */
+/** OnFlow production tokens — presentation only. */
 
 export const C = {
   charcoal: "#000000",
@@ -45,11 +45,16 @@ export const SPACE = {
   "2xl": 32,
 } as const;
 
+/**
+ * Geometry: sharp default. Pills are the exception.
+ * small controls 2–4 · cards 4–6 · large surfaces 6–8 · pill only when semantic
+ */
 export const RADIUS = {
+  xs: 2,
   sm: 4,
-  md: 8,
-  lg: 12,
-  xl: 16,
+  md: 6,
+  lg: 8,
+  xl: 8,
   pill: 999,
 } as const;
 
