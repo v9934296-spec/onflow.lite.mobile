@@ -8,7 +8,12 @@ import Purchases, {
   type PurchasesPackage,
 } from "react-native-purchases";
 
-import { RC_PACKAGE_IDS, type RcPackageKind } from "./constants";
+import {
+  RC_PACKAGE_IDS,
+  RC_PRODUCT_REUP,
+  RC_PRODUCT_REUP_ALIASES,
+  type RcPackageKind,
+} from "./constants";
 import { resolveOfferingPackages as resolveOfferingPackagesBase } from "./entitlements";
 
 export {
@@ -84,6 +89,23 @@ export async function purchasePackageByKind(kind: RcPackageKind): Promise<Custom
     );
   }
   const { customerInfo } = await Purchases.purchasePackage(selected);
+  return customerInfo;
+}
+
+/** One-time +10 analyses pack (Store product, not a subscription package). */
+export async function purchaseReUpPack(): Promise<CustomerInfo> {
+  const ok = await configureRevenueCat();
+  if (!ok) throw new Error("RevenueCat is not configured.");
+
+  const products = await Purchases.getProducts([...RC_PRODUCT_REUP_ALIASES]);
+  const product =
+    products.find((p) => RC_PRODUCT_REUP_ALIASES.some((id) => id === p.identifier)) ?? products[0];
+  if (!product) {
+    throw new Error(
+      `Re-Up product "${RC_PRODUCT_REUP}" not found. Add it in App Store Connect / Play and RevenueCat.`,
+    );
+  }
+  const { customerInfo } = await Purchases.purchaseStoreProduct(product);
   return customerInfo;
 }
 

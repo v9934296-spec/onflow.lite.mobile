@@ -58,8 +58,10 @@ class Settings(BaseSettings):
     sentry_environment: str = "production"
     sentry_traces_sample_rate: float = 0.1
 
-    # Free tier: max analyses per calendar month (enforced in clip submission).
-    rate_limit_free: int = 4
+    # Product quota: max analyses per calendar month (enforced in clip_quota).
+    # Free = 3/mo, Pro = 30/mo; Re-Up bonus credits apply after the monthly cap.
+    rate_limit_free: int = 3
+    rate_limit_pro: int = 30
 
     # --- Security / abuse throttles (NOT product quota; NOT Gemini tier or model routing) ---
     # Invite email session + claim: per client IP (slowapi).
@@ -73,7 +75,7 @@ class Settings(BaseSettings):
     export_rate_limit_per_hour: int = 2
     delete_account_rate_limit_per_day: int = 1
     # Clip uploads: abuse ceiling (rolling windows in usage_limits + slowapi). Independent of
-    # monthly free / bonus / Pro unlimited in clip_quota.py.
+    # monthly free / Pro / bonus product quota in clip_quota.py.
     clip_rate_limit_per_hour: int = 10
     clip_rate_limit_per_day: int = 30
     # Max jobs in pending+processing per user; 0 = disable concurrent guard.

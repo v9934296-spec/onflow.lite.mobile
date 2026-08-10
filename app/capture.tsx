@@ -12,7 +12,13 @@ import {
 import { track } from "../src/analytics";
 import { uploadClipToSession } from "../src/api/clipApi";
 import { useAccount } from "../src/auth/accountContext";
-import { isQuotaExceededMessage, PAYWALL_ROUTE } from "../src/billing/quota";
+import {
+  isProTier,
+  isQuotaExceededMessage,
+  PAYWALL_REUP_ROUTE,
+  PAYWALL_ROUTE,
+  usePurchases,
+} from "../src/billing";
 import { SAMPLE_CLIPS, analyzeSample, analyzeUserClip } from "../src/engine";
 import { getFlowRedirect } from "../src/flowGuard";
 import { useSkateSession } from "../src/skateSession/skateSessionContext";
@@ -34,10 +40,12 @@ class QuotaExceededError extends Error {
 export default function Capture() {
   const router = useRouter();
   const { user } = useAccount();
+  const { isProEntitled } = usePurchases();
   const { trick, analysis, selectedTrick, setAnalysis, setPendingClipJobId } = useSession();
   const { activeSession, hasActiveSession } = useSkateSession();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
+  const isPro = isProEntitled || isProTier(user?.tier);
   const [statusLabel, setStatusLabel] = useState<string | null>(null);
 
   const redirect = getFlowRedirect("capture", { trick, analysis });
@@ -175,10 +183,17 @@ export default function Capture() {
       const message = error instanceof Error ? error.message : "Unknown capture error";
       track("capture_failed", { source: fromCamera ? "camera" : "library", message });
       if (error instanceof QuotaExceededError) {
-        Alert.alert("Analysis limit reached", message, [
-          { text: "Not now", style: "cancel" },
-          { text: "View upgrade", onPress: () => router.push(PAYWALL_ROUTE) },
-        ]);
+        Alert.alert(
+          isPro ? "You're out of analyses" : "Analysis limit reached",
+          message,
+          [
+            { text: "Not now", style: "cancel" },
+            {
+              text: isPro ? "Re-Up" : "View upgrade",
+              onPress: () => router.push(isPro ? PAYWALL_REUP_ROUTE : PAYWALL_ROUTE),
+            },
+          ],
+        );
       } else {
         Alert.alert("Couldn't upload the clip", message);
       }

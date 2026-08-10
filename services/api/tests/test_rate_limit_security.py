@@ -172,7 +172,10 @@ def test_clip_abuse_limits_are_config_driven_not_quota(
     s = Settings()
     assert s.clip_rate_limit_per_day >= 1
     assert s.clip_rate_limit_per_hour >= 1
+    assert s.rate_limit_free == 3
+    assert s.rate_limit_pro == 30
     assert s.rate_limit_free != s.clip_rate_limit_per_day
+    assert s.rate_limit_pro != s.rate_limit_free
 
 
 def test_concurrent_processing_limit_returns_429(

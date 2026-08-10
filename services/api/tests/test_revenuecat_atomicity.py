@@ -76,9 +76,9 @@ def test_reup_duplicate_credits_once(client: TestClient) -> None:
     )
 
     assert first["action"] == "reup_bonus_added"
-    assert first["bonus_analyses"] == 3
+    assert first["bonus_analyses"] == 10
     assert duplicate["action"] == "duplicate_event_ignored"
-    assert client.app.state.db.get_bonus_analyses(user_id) == 3
+    assert client.app.state.db.get_bonus_analyses(user_id) == 10
 
 
 def test_unknown_product_event_remains_manually_replayable(

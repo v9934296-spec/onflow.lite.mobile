@@ -23,7 +23,7 @@ from app.core.rate_limit import (
     limiter,
     signed_in_user_key,
 )
-from app.core.tiers import normalize_tier, tier_has_unlimited_analyses
+from app.core.tiers import monthly_analysis_cap, normalize_tier, tier_has_unlimited_analyses
 from app.models import get_analyses_remaining
 from app.routers.consent import consent_status_from_user
 from app.schemas.consent import ConsentStatus
@@ -40,7 +40,7 @@ class AccountQuotaResponse(BaseModel):
     bonus_analyses: int
     monthly_free_remaining: int | None = Field(
         default=None,
-        description="None when Pro/Coach (unlimited analyses).",
+        description="Monthly product analyses remaining (Free or Pro). None when trial/unlimited.",
     )
 
 
@@ -208,11 +208,20 @@ def get_account_quota(
             monthly_free_remaining=None,
         )
     used = repo.count_monthly_free_jobs(user_id)
-    cap = max(1, settings.rate_limit_free)
+    cap = monthly_analysis_cap(tier, settings)
+    if cap is None:
+        return AccountQuotaResponse(
+            tier=tier,
+            analyses_remaining=analyses_remaining,
+            trial_expires_at=trial_expires_at,
+            subscription_status=subscription_status,
+            bonus_analyses=bonus,
+            monthly_free_remaining=None,
+        )
     remaining = max(0, cap - used)
     return AccountQuotaResponse(
         tier=tier,
-        analyses_remaining=remaining,
+        analyses_remaining=remaining + bonus,
         trial_expires_at=trial_expires_at,
         subscription_status=subscription_status,
         bonus_analyses=bonus,

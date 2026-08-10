@@ -4,7 +4,7 @@ Entitlement *changes* (tier upgrades/downgrades, Re-Up bonus credits) are applie
 the authenticated RevenueCat webhook (`/api/v1/webhooks/revenuecat`), which is the single
 source of truth. This endpoint deliberately does NOT grant tier or bonus from client-supplied
 claims: there is no server-side RevenueCat verification key, so trusting the client would let
-any signed-in user self-upgrade to a paid tier (unlimited analyses) for free.
+any signed-in user self-upgrade to a paid tier for free.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from app.core.auth import get_current_user
-from app.core.tiers import normalize_tier, tier_has_unlimited_analyses
+from app.core.tiers import monthly_analysis_cap, normalize_tier, tier_has_unlimited_analyses
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,13 @@ def sync_billing(
             monthly_free_remaining=None,
         )
 
-    cap = max(1, settings.rate_limit_free)
+    cap = monthly_analysis_cap(current_tier, settings)
+    if cap is None:
+        return SyncResponse(
+            tier=current_tier,
+            bonus_analyses=bonus,
+            monthly_free_remaining=None,
+        )
     used = repo.count_monthly_free_jobs(user_id)
     remaining = max(0, cap - used)
     return SyncResponse(

@@ -405,8 +405,11 @@ def tier_has_feature(tier: str, feature: str) -> bool:
 
 
 def get_analyses_remaining(user: UserModel) -> int:
-    normalized_tier = (user.tier or "").strip().lower()
-    if normalized_tier in {"trial", "pro", "session_reup"}:
+    """Legacy helper: ``-1`` = unlimited trial. Prefer account quota for Free/Pro monthly remaining."""
+    from app.core.tiers import normalize_tier
+
+    normalized_tier = normalize_tier(user.tier)
+    if normalized_tier == "trial":
         return -1
     if normalized_tier == "free_expired":
         return 0

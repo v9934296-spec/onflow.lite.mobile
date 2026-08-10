@@ -216,7 +216,7 @@ async def revenuecat_webhook(request: Request) -> dict:
             event_id=event_id,
             candidate_user_ids=candidate_user_ids,
             rc_customer_id=rc_app_user_id,
-            bonus_delta=3,
+            bonus_delta=10,
         )
         if applied.duplicate:
             return _duplicate_response(event_id)

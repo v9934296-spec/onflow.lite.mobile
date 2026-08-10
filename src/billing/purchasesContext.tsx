@@ -16,10 +16,13 @@ import {
   fetchCustomerInfo,
   hasActiveProEntitlement,
   identifyRevenueCatUser,
+  purchasePackageByKind,
+  purchaseReUpPack,
   resolveOfferingPackages,
   restorePurchases,
   resetRevenueCatUser,
 } from "./revenueCat";
+import type { RcPackageKind } from "./constants";
 import { syncCustomerInfoToBackend } from "./sync";
 
 type PurchasesContextValue = {
@@ -32,6 +35,8 @@ type PurchasesContextValue = {
   showPaywall: () => Promise<PaywallFlowResult>;
   showCustomerCenter: () => Promise<{ ok: boolean; message?: string }>;
   restore: () => Promise<CustomerInfo | null>;
+  purchasePackage: (kind: RcPackageKind) => Promise<CustomerInfo | null>;
+  purchaseReUp: () => Promise<CustomerInfo | null>;
 };
 
 const PurchasesContext = createContext<PurchasesContextValue | null>(null);
@@ -143,6 +148,31 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applyInfo]);
 
+  const purchasePackage = useCallback(
+    async (kind: RcPackageKind) => {
+      try {
+        const info = await purchasePackageByKind(kind);
+        await applyInfo(info, true);
+        return info;
+      } catch (error) {
+        console.warn("[revenuecat] purchasePackage failed", error);
+        throw error;
+      }
+    },
+    [applyInfo],
+  );
+
+  const purchaseReUp = useCallback(async () => {
+    try {
+      const info = await purchaseReUpPack();
+      await applyInfo(info, true);
+      return info;
+    } catch (error) {
+      console.warn("[revenuecat] purchaseReUp failed", error);
+      throw error;
+    }
+  }, [applyInfo]);
+
   const value = useMemo<PurchasesContextValue>(
     () => ({
       ready,
@@ -154,8 +184,20 @@ export function PurchasesProvider({ children }: { children: React.ReactNode }) {
       showPaywall,
       showCustomerCenter,
       restore,
+      purchasePackage,
+      purchaseReUp,
     }),
-    [ready, customerInfo, offering, refresh, showPaywall, showCustomerCenter, restore],
+    [
+      ready,
+      customerInfo,
+      offering,
+      refresh,
+      showPaywall,
+      showCustomerCenter,
+      restore,
+      purchasePackage,
+      purchaseReUp,
+    ],
   );
 
   return <PurchasesContext.Provider value={value}>{children}</PurchasesContext.Provider>;

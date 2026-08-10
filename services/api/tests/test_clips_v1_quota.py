@@ -60,7 +60,10 @@ def test_complete_upload_records_quota_source(authed_client: TestClient) -> None
 def test_initiate_does_not_consume_bonus_until_complete(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from app.core.config import get_settings
+
     monkeypatch.setenv("ONFLOW_RATE_LIMIT_FREE", "1")
+    get_settings.cache_clear()
     db = authed_client.app.state.db
     db.ensure_invite_claim_user("test-user-001", "free")
     db.add_bonus_analyses("test-user-001", 2)
@@ -81,3 +84,54 @@ def test_initiate_does_not_consume_bonus_until_complete(
     assert authed_client.post(f"/api/v1/clips/{c2['clip_id']}/complete-upload").status_code == 200
     assert db.get_bonus_analyses("test-user-001") == 1
     assert _job_quota_source(c2["clip_id"]) == "bonus"
+
+
+def test_pro_monthly_cap_then_reup_bonus(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pro is capped (default 30); after the monthly slots, Re-Up bonus applies."""
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ONFLOW_RATE_LIMIT_PRO", "1")
+    get_settings.cache_clear()
+    db = authed_client.app.state.db
+    db.ensure_invite_claim_user("test-user-001", "pro")
+    db.set_user_tier("test-user-001", "pro")
+    db.add_bonus_analyses("test-user-001", 1)
+
+    c1 = _initiate(authed_client)
+    _write_local_upload(authed_client, c1["storage_key"])
+    assert authed_client.post(f"/api/v1/clips/{c1['clip_id']}/complete-upload").status_code == 200
+    assert _job_quota_source(c1["clip_id"]) == "monthly"
+    assert db.get_bonus_analyses("test-user-001") == 1
+
+    c2 = _initiate(authed_client)
+    _write_local_upload(authed_client, c2["storage_key"])
+    assert authed_client.post(f"/api/v1/clips/{c2['clip_id']}/complete-upload").status_code == 200
+    assert _job_quota_source(c2["clip_id"]) == "bonus"
+    assert db.get_bonus_analyses("test-user-001") == 0
+
+    c3 = _initiate(authed_client)
+    _write_local_upload(authed_client, c3["storage_key"])
+    r = authed_client.post(f"/api/v1/clips/{c3['clip_id']}/complete-upload")
+    assert r.status_code == 429
+    assert "Pro analysis limit" in r.json()["detail"]
+
+
+def test_pro_quota_endpoint_reports_monthly_remaining(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("ONFLOW_RATE_LIMIT_PRO", "30")
+    get_settings.cache_clear()
+    db = authed_client.app.state.db
+    db.ensure_invite_claim_user("test-user-001", "pro")
+    db.set_user_tier("test-user-001", "pro")
+
+    r = authed_client.get("/api/v1/account/quota")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["tier"] == "pro"
+    assert body["monthly_free_remaining"] == 30
+    assert body["analyses_remaining"] == 30

@@ -1,7 +1,7 @@
 """
 Slowapi rate limits for abuse / spam protection.
 
-**Product quota** (monthly free tier, bonus credits, Pro unlimited) lives in ``clip_quota`` —
+**Product quota** (monthly Free/Pro caps, Re-Up bonus credits, trial unlimited) lives in ``clip_quota`` —
 separate from these ceilings.
 
 **Security throttles here must not** change Gemini model choice, tier normalization, or

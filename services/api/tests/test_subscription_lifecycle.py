@@ -263,6 +263,17 @@ def test_expired_trial_no_longer_has_unlimited_quota(client: TestClient) -> None
     assert not tier_has_unlimited_analyses(tier)
 
 
+def test_pro_tier_is_not_unlimited() -> None:
+    from app.core.config import Settings
+    from app.core.tiers import monthly_analysis_cap, tier_has_unlimited_analyses
+
+    settings = Settings()
+    assert not tier_has_unlimited_analyses("pro")
+    assert monthly_analysis_cap("pro", settings) == 30
+    assert monthly_analysis_cap("free", settings) == 3
+    assert monthly_analysis_cap("trial", settings) is None
+
+
 # ---------------------------------------------------------------------------
 # free_expired feature lockout on upload + session creation
 # ---------------------------------------------------------------------------

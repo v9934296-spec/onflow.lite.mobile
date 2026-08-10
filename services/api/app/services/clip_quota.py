@@ -1,4 +1,4 @@
-"""Clip submission quota: Pro unlimited → bonus pool → monthly free cap.
+"""Clip submission quota: trial unlimited → monthly Free/Pro cap → Re-Up bonus pool.
 
 Cross-replica safety: ``create_job_charging_quota`` uses a single Postgres/SQLite
 transaction with ``SELECT … FOR UPDATE`` on the user row, then counts monthly
@@ -16,9 +16,9 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.database import get_engine
-from app.core.tiers import normalize_tier, tier_has_unlimited_analyses
+from app.core.tiers import monthly_analysis_cap, normalize_tier, tier_has_unlimited_analyses
 from app.domain.clip_job import ClipJobRecord, JobAlreadyExists
 from app.models import ClipJobModel, UserModel
 from app.repositories.clip_jobs import ClipJobRepository, _current_month_bounds_utc
@@ -49,20 +49,43 @@ def reserve_clip_submission(request: Request, user_id: str) -> tuple[str, str | 
     repo: ClipJobRepository = request.app.state.repo
 
     with _lock_for_user(user_id):
-        return _decide_quota(db, repo, user_id, settings.rate_limit_free)
+        return _decide_quota(db, repo, user_id, settings)
+
+
+def _quota_exhausted_http(tier: str) -> HTTPException:
+    if normalize_tier(tier) in {"pro", "session_reup"}:
+        return HTTPException(
+            status_code=429,
+            detail=(
+                "Monthly Pro analysis limit reached. Purchase a Re-Up Pack "
+                "or wait until next month."
+            ),
+        )
+    return HTTPException(
+        status_code=429,
+        detail=(
+            "Monthly free analysis limit reached. Upgrade, purchase a Re-Up Pack, "
+            "or wait until next month."
+        ),
+    )
 
 
 def _decide_quota(
     db: IdentityRepository,
     repo: ClipJobRepository,
     user_id: str,
-    rate_limit_free: int,
+    settings: Settings,
 ) -> tuple[str, str | None]:
     tier = normalize_tier(db.get_user_tier(user_id))
     if tier_has_unlimited_analyses(tier):
         return tier, "unlimited"
 
-    cap = max(1, rate_limit_free)
+    cap = monthly_analysis_cap(tier, settings)
+    if cap is None:
+        return tier, "unlimited"
+    if cap <= 0:
+        raise _quota_exhausted_http(tier)
+
     used = repo.count_monthly_free_jobs(user_id)
     if used < cap:
         return tier, "monthly"
@@ -70,13 +93,7 @@ def _decide_quota(
     if db.try_consume_one_bonus(user_id):
         return tier, "bonus"
 
-    raise HTTPException(
-        status_code=429,
-        detail=(
-            "Monthly free analysis limit reached. Upgrade, purchase a Re-Up Pack, "
-            "or wait until next month."
-        ),
-    )
+    raise _quota_exhausted_http(tier)
 
 
 def _consume_bonus_on_row(row: UserModel) -> bool:
@@ -132,47 +149,43 @@ def _count_monthly_free_jobs(session: Session, user_id: str) -> int:
     )
 
 
-def _quota_exhausted_http() -> HTTPException:
-    return HTTPException(
-        status_code=429,
-        detail=(
-            "Monthly free analysis limit reached. Upgrade, purchase a Re-Up Pack, "
-            "or wait until next month."
-        ),
-    )
-
-
 def _create_job_charging_quota_sql(
     db: IdentityRepository,
     user_id: str,
     build_record: Callable[[str, str | None], ClipJobRecord],
-    rate_limit_free: int,
+    settings: Settings,
 ) -> ClipJobRecord:
     """Single-transaction charge: lock user, count monthly, insert job."""
     with Session(get_engine()) as session:
         row = session.exec(
             select(UserModel).where(UserModel.id == user_id).with_for_update()
         ).first()
-        cap = max(1, rate_limit_free)
 
         if row is None:
             # Dev Bearer / missing identity row: free monthly only (matches get_user_tier).
             tier = "free"
+            cap = monthly_analysis_cap(tier, settings) or 0
             if _count_monthly_free_jobs(session, user_id) >= cap:
-                raise _quota_exhausted_http()
+                raise _quota_exhausted_http(tier)
             quota_src: str | None = "monthly"
         else:
             db._expire_trial_if_due(session, row)
             tier = normalize_tier(row.tier)
             if tier_has_unlimited_analyses(tier):
                 quota_src = "unlimited"
-            elif _count_monthly_free_jobs(session, user_id) < cap:
-                quota_src = "monthly"
-            elif _consume_bonus_on_row(row):
-                session.add(row)
-                quota_src = "bonus"
             else:
-                raise _quota_exhausted_http()
+                cap = monthly_analysis_cap(tier, settings)
+                if cap is None:
+                    quota_src = "unlimited"
+                elif cap <= 0:
+                    raise _quota_exhausted_http(tier)
+                elif _count_monthly_free_jobs(session, user_id) < cap:
+                    quota_src = "monthly"
+                elif _consume_bonus_on_row(row):
+                    session.add(row)
+                    quota_src = "bonus"
+                else:
+                    raise _quota_exhausted_http(tier)
 
         record = build_record(tier, quota_src)
         try:
@@ -205,11 +218,9 @@ def create_job_charging_quota(
         from app.repositories.clip_jobs import SqlClipJobRepository
 
         if isinstance(repo, SqlClipJobRepository):
-            return _create_job_charging_quota_sql(
-                db, user_id, build_record, settings.rate_limit_free
-            )
+            return _create_job_charging_quota_sql(db, user_id, build_record, settings)
 
-        tier, quota_src = _decide_quota(db, repo, user_id, settings.rate_limit_free)
+        tier, quota_src = _decide_quota(db, repo, user_id, settings)
         record = build_record(tier, quota_src)
         try:
             _create_exclusive(repo, record)

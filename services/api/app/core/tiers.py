@@ -19,7 +19,24 @@ def normalize_tier(raw: str | None) -> str:
 
 
 def tier_has_unlimited_analyses(tier: str) -> bool:
-    return normalize_tier(tier) in {"trial", "pro", "session_reup"}
+    """Only an active trial skips the monthly product cap. Pro is capped (see rate_limit_pro)."""
+    return normalize_tier(tier) == "trial"
+
+
+def monthly_analysis_cap(tier: str | None, settings: Settings) -> int | None:
+    """
+    Calendar-month product analysis cap for the tier.
+
+    Returns ``None`` when analyses are unlimited (active trial only).
+    """
+    t = normalize_tier(tier)
+    if tier_has_unlimited_analyses(t):
+        return None
+    if t in {"pro", "session_reup"}:
+        return max(1, int(settings.rate_limit_pro))
+    if t == "free_expired":
+        return 0
+    return max(1, int(settings.rate_limit_free))
 
 
 def resolve_gemini_model_for_tier(tier: str | None, settings: Settings) -> str:
