@@ -6,8 +6,9 @@ watchPaths = ["services/api/**"]
 # deploy API-only — clip analysis and the hourly pending-upload reaper run there.
 
 [deploy]
+# Exec-style arrays treat the whole string as argv[0] (exit 127). Run via sh.
 # Bare `alembic` is not on PATH in the Wolfi image — use the module form.
-preDeployCommand = ["python3.12 -m alembic upgrade head"]
+preDeployCommand = ["/bin/sh -c 'cd /app && python3.12 -m alembic upgrade head'"]
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"

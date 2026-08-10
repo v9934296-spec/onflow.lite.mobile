@@ -8,7 +8,7 @@ Use this after the billing/API code gates land. Do not commit secrets here.
    - **API** — config `railway.toml` → `services/api/Dockerfile` (Alembic pre-deploy + `/health`).
    - **Worker** — config `railway.worker.toml` → `services/api/Dockerfile.worker` (ARQ + hourly pending-upload reaper). Do not ship API-only envs.
 2. Shared: Postgres, Redis, R2 credentials on **both** services.
-3. Before traffic: `python3.12 -m alembic upgrade head` (Railway pre-deploy / release; bare `alembic` is not on PATH in the API image). `create_all` is disabled in production/staging.
+3. Before traffic: Railway pre-deploy runs `/bin/sh -c 'cd /app && python3.12 -m alembic upgrade head'` (see `railway.toml`; bare `alembic` is not on PATH). `create_all` is disabled in production/staging.
 4. API replicas: quota charge uses Postgres `SELECT … FOR UPDATE` (`clip_quota.py`). Keep feed SSE fan-out in mind — the SSE hub is still in-process (clients pin to one replica or use Bearer + ticket refresh).
 5. Env (production) — API **and** worker. Boot fails closed without JWT, RC webhook secret, RC Pro product IDs, Redis, S3, and provider keys (also required for `staging`):
    - `ONFLOW_ENV=production` (never leave unset — defaults to development)

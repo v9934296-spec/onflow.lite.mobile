@@ -92,18 +92,30 @@ class S3Storage:
         temp_dir: str | Path = "/tmp/onflow-downloads",
     ) -> None:
         import boto3
+        from botocore.config import Config
 
         self._bucket = bucket
         self._temp = Path(temp_dir)
         self._temp.mkdir(parents=True, exist_ok=True)
-        # region_name="auto" is required for Cloudflare R2; without it, presigned
-        # PUTs often fail with HTTP 401 Unauthorized (signature mismatch).
+        # R2 requires region_name="auto". Newer boto3 defaults also sign flexible
+        # checksum headers that R2 rejects on presigned PUTs (HTTP 401).
+        # See: https://developers.cloudflare.com/r2/examples/aws/boto3/
+        endpoint = endpoint_url.rstrip("/")
+        try:
+            s3_config = Config(
+                signature_version="s3v4",
+                request_checksum_calculation="when_required",
+                response_checksum_validation="when_required",
+            )
+        except TypeError:
+            s3_config = Config(signature_version="s3v4")
         self._s3 = boto3.client(
             "s3",
-            endpoint_url=endpoint_url,
+            endpoint_url=endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name="auto",
+            config=s3_config,
         )
 
     async def put(self, key: str, data: BinaryIO, content_type: str = "video/mp4") -> str:

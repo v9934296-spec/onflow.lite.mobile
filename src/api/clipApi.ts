@@ -3,14 +3,21 @@ import { Platform } from "react-native";
 import { apiRequest } from "./client";
 import type { ApiResult } from "./types";
 
-function storageUploadFailureMessage(status: number): string {
+function storageUploadFailureMessage(status: number, uploadUrl: string): string {
+  let host = "R2/S3";
+  try {
+    host = new URL(uploadUrl).host;
+  } catch {
+    /* keep default */
+  }
   if (status === 401 || status === 403) {
     return (
-      `Clip storage rejected the upload (${status}). ` +
-      "This is the video host (R2/S3), not your OnFlow login — check API R2 credentials and redeploy."
+      `Clip storage rejected the upload (${status}) at ${host}. ` +
+      "This is the video host, not your OnFlow login — redeploy the API with R2-compatible signing " +
+      "(region=auto, checksums when_required) and verify ONFLOW_S3_* env vars."
     );
   }
-  return `Storage upload failed (${status}).`;
+  return `Storage upload failed (${status}) at ${host}.`;
 }
 
 export interface InitiateClipUploadResponse {
@@ -110,7 +117,7 @@ export async function uploadClipToPresignedUrl(
           ok: false,
           error: {
             kind: "server",
-            message: storageUploadFailureMessage(result.status),
+            message: storageUploadFailureMessage(result.status, uploadUrl),
             status: result.status,
           },
         };
@@ -148,7 +155,7 @@ export async function uploadClipToPresignedUrl(
       ok: false,
       error: {
         kind: "server",
-        message: storageUploadFailureMessage(res.status),
+        message: storageUploadFailureMessage(res.status, uploadUrl),
         status: res.status,
       },
     };
