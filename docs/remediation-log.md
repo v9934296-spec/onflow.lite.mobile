@@ -590,3 +590,60 @@ archived.
 
 Still open (arch): Redis-backed SSE fan-out across API replicas; deep issue
 register file if restored separately.
+
+## Entry 10 — Migration graph split head + no-empty-DB bootstrap gap
+
+Found during a senior build review (2026-08-14), verified against a local
+Postgres 16 instance (Docker unavailable; installed the server package directly).
+
+### Fixed
+
+- **Split Alembic head.** `20260801_clip_job_leases` and
+  `20260802_rc_entitlement_state` both set
+  `down_revision = "20260717_session_attempts"` independently, so
+  `alembic upgrade head` — Railway's `preDeployCommand` — failed with
+  "Multiple head revisions are present" against a fresh database. Added a
+  no-op merge migration (`20260803_merge_heads.py`); `alembic heads` now
+  returns one head. Caught by `tests/test_schema_migrations.py`, which was
+  red on this branch before the fix.
+- **Order-dependent test.** `test_fetch_prior_respects_exclude_job` opened a
+  `Session` directly via `get_engine()` without ever triggering
+  `create_db_tables()` (only the FastAPI lifespan, via `TestClient`, does
+  that), so it failed with `no such table: trick_stats` — in isolation and in
+  the full run, contradicting the CI workflow's own comment that the suite is
+  "self-contained and order-independent." Fixed by depending on the `client`
+  fixture, matching every other test that mixes direct `Session` access with
+  the app's schema setup. Full backend suite: 400 passed / 0 failed / 4
+  skipped (was 398 / 2 failed).
+
+### Found, not fixed here — scoped as follow-up
+
+- **No migration creates the base tables.** Fixing the split head above
+  surfaced a deeper, pre-existing gap while verifying `alembic upgrade head`
+  against a truly empty Postgres 16: it fails on `CREATE INDEX … ON
+  clip_jobs` because `clip_jobs` (and `users`, and every other base table)
+  is never created by any migration — the earliest one, `add_oauth_providers`,
+  explicitly no-ops when `users` doesn't exist yet (`if not
+  insp.has_table("users"): return`). The whole chain was written assuming
+  `create_db_tables()` had already run once against the target database. That
+  call is intentionally disabled in production/staging (Entry 9, P1-2), so a
+  **genuinely new** Postgres instance — a new Railway project, a
+  disaster-recovery restore into an empty database, a fresh staging
+  environment — currently has no automatic path to stand itself up. Today's
+  production database only works because it predates this constraint or was
+  bootstrapped manually before Alembic tracking began.
+- This was deliberately **not** fixed by writing a genesis migration in the
+  same pass: inferring full DDL (types, constraints, defaults, indexes) for
+  ~17 tables from the current SQLModel definitions and getting it right on
+  the first try is a higher-risk change than the two fixes above, and
+  deserves its own review rather than being bundled into a blocker-fix pass.
+- **Interim workaround, documented in `docs/ios-testflight-ops-checklist.md`**
+  ("Bootstrapping a genuinely new environment"): set
+  `ONFLOW_ALLOW_CREATE_ALL=1` once to create tables via
+  `SQLModel.metadata.create_all()`, unset it, then `alembic stamp head` to
+  mark the database current without replaying the broken chain. Manual, and
+  depends on a human running it correctly on every new environment — not a
+  substitute for a real genesis migration.
+
+Still open: write a genesis migration (or squash the chain) so
+`alembic upgrade head` alone can bootstrap a truly empty database.
