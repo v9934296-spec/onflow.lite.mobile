@@ -20,6 +20,11 @@ def upgrade() -> None:
     conn = op.get_bind()
     insp = sa.inspect(conn)
     if not insp.has_table("users"):
+        # No migration in this chain creates `users` from empty — it was written
+        # assuming create_db_tables() had already run once. On a genuinely new
+        # database this no-ops instead of failing here, but a later migration
+        # (e.g. an index on clip_jobs) will still fail. See ops checklist
+        # "Bootstrapping a genuinely new environment" / remediation-log Entry 10.
         return
     cols = {c["name"] for c in insp.get_columns("users")}
 

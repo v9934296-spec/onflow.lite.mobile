@@ -4,6 +4,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
+from fastapi.testclient import TestClient
+
 from app.models import TrickStatModel
 from app.services.stats_logic import (
     build_attempt_compare_block,
@@ -90,8 +92,15 @@ def test_compare_payload_uses_three_prior_window() -> None:
     assert data["compare_available"] is True
 
 
-def test_fetch_prior_respects_exclude_job() -> None:
-    """Integration-style: prior fetch excludes current job id."""
+def test_fetch_prior_respects_exclude_job(client: TestClient) -> None:
+    """Integration-style: prior fetch excludes current job id.
+
+    Depends on the ``client`` fixture (unused otherwise) purely so the FastAPI
+    lifespan runs ``create_db_tables()`` before this test opens its own Session —
+    this test never issues an HTTP request, but without that dependency it can
+    fail with "no such table: trick_stats" depending on run order.
+    """
+    del client
     from sqlmodel import Session
 
     from app.core.database import get_engine
