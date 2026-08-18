@@ -217,7 +217,7 @@ def bearer_identity_for_rate_limit(request: Request) -> str | None:
         except jwt.InvalidTokenError:
             return None
     if token.startswith("dev:"):
-        if settings.is_production:
+        if settings.is_production_or_staging:
             return None
         return token[4:]
     return None

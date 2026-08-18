@@ -282,3 +282,47 @@ def test_pro_tier_gemini_routing_unchanged(monkeypatch: pytest.MonkeyPatch) -> N
     s = Settings()
     assert resolve_gemini_model_for_tier("pro", s) == "pro-model-y"
     assert resolve_gemini_model_for_tier("free", s) == "free-model-x"
+
+
+def test_bearer_identity_for_rate_limit_rejects_dev_token_in_staging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``dev:`` tokens must not resolve to a rate-limit identity in staging.
+
+    Every other production-guard check in core/auth.py (get_current_user,
+    resolve_user_id_from_token, issue_onflow_access_token, ...) gates on
+    ``is_production_or_staging``. This one used to check only ``is_production``,
+    so a staging deploy would key rate limits off an unsigned dev token instead
+    of falling back to IP — a drift bug, not exploitable auth bypass, but the
+    kind that becomes one the next time a call site is copied without noticing.
+    """
+    import app.core.auth as auth_module
+
+    class _FakeSettings:
+        jwt_secret = ""
+        is_production_or_staging = True
+
+    class _FakeDb:
+        def validate_token(self, token: str) -> str | None:
+            return None
+
+    class _FakeAppState:
+        db = _FakeDb()
+
+    class _FakeApp:
+        state = _FakeAppState()
+
+    class _FakeRequest:
+        app = _FakeApp()
+
+        def __init__(self, token: str) -> None:
+            self._headers = {"authorization": f"Bearer {token}"}
+
+        @property
+        def headers(self):
+            return self._headers
+
+    monkeypatch.setattr(auth_module, "get_settings", lambda: _FakeSettings())
+
+    uid = auth_module.bearer_identity_for_rate_limit(_FakeRequest("dev:someone"))
+    assert uid is None
