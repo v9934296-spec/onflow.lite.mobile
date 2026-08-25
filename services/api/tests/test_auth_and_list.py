@@ -3,7 +3,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.conftest import submit_clip_via_presigned, write_presigned_upload
+from tests.conftest import (
+    submit_clip_via_presigned,
+    wait_for_terminal_job,
+    write_presigned_upload,
+)
 
 
 def test_claim_endpoint_removed(client: TestClient) -> None:
@@ -14,24 +18,61 @@ def test_claim_endpoint_removed(client: TestClient) -> None:
 def test_clip_submission_monthly_quota_exceeded_returns_429(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Fourth complete-upload is 429 only after three chargeable monthly slots.
+
+    Unreadable sniff bytes refund ``monthly`` (BE-002). This fixture stubs a
+    usable first pass and waits for terminal jobs so the cap is actually occupied.
+    """
     monkeypatch.setenv("ONFLOW_DATABASE_PATH", str(tmp_path / "onflow.db"))
     monkeypatch.setenv("ONFLOW_UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("ONFLOW_RATE_LIMIT_FREE", "3")
     import app.core.database as database_module
+    from app.core.config import get_settings
+    from app.services import clip_worker
 
     database_module._engine = None
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        clip_worker,
+        "analyze_video_first_pass",
+        lambda _path: {
+            "video_readable": True,
+            "duration_seconds": 4.0,
+            "fps": 30.0,
+            "frame_count_estimated": 120,
+            "frames_sampled": 12,
+            "motion_detected": True,
+            "mean_brightness_0_1": 0.5,
+            "laplacian_var_mean": 140.0,
+            "review_readiness": "usable",
+            "observations": ["Rider visible across sampled frames."],
+            "processing_notes": [],
+            "review_summary_base": "Clip is readable.",
+        },
+    )
     from app.main import create_app
 
     app = create_app()
     with TestClient(app) as c:
         r = c.post("/api/v1/auth/session", json={"email": "rate-limit@onflow.test"})
         assert r.status_code == 200
-        c.app.state.db.set_user_tier(r.json()["user_id"], "free")
+        user_id = r.json()["user_id"]
+        c.app.state.db.set_user_tier(user_id, "free")
         from app.services.video_signature import MINIMAL_VIDEO_SNIFF_BYTES
 
         h = {"Authorization": f"Bearer {r.json()['session_token']}"}
-        for _ in range(3):
+        occupied = [
             submit_clip_via_presigned(c, h, video_bytes=MINIMAL_VIDEO_SNIFF_BYTES)
+            for _ in range(3)
+        ]
+        for clip_id in occupied:
+            terminal = wait_for_terminal_job(c, clip_id, h)
+            assert terminal["status"] == "completed", terminal
+            job = c.app.state.repo.get(clip_id)
+            assert job is not None
+            assert job.quota_source == "monthly"
+        assert c.app.state.repo.count_monthly_free_jobs(user_id) == 3
+
         initiated = c.post(
             "/api/v1/clips/initiate-upload",
             json={

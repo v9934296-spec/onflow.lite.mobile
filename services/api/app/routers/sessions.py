@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import update as sa_update
 from sqlmodel import Session, func, select
 
 from app.core.auth import get_current_user
@@ -24,7 +25,7 @@ from app.schemas.sessions import (
     SessionResponse,
     SessionUpdate,
 )
-from app.services.clip_upload import iso_z
+from app.services.clip_upload import as_utc, iso_z
 from app.services.feed_event_generator import generate_session_recap_feed_event
 from app.services.session_recap import build_session_recap_detail
 from app.services.trick_registry import normalize_trick_name
@@ -276,17 +277,42 @@ def update_session(
     row = _active_session(db, session_id, for_user=user_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Session not found.")
-    was_ended = row.ended_at is not None
     data = body.model_dump(exclude_unset=True)
+    now = datetime.now(timezone.utc)
+
+    incoming_end: datetime | None = None
+    wants_end = False
+    if "ended_at" in data:
+        incoming = data.pop("ended_at")
+        if incoming is not None:
+            incoming_end = as_utc(incoming)
+            wants_end = True
+
     for key, value in data.items():
-        if key == "ended_at" and value is not None and value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
         setattr(row, key, value)
-    row.updated_at = datetime.now(timezone.utc)
+    row.updated_at = now
     db.add(row)
+    db.flush()
+
+    transitioned = False
+    if wants_end:
+        # First write wins in the database, not in a prior in-memory snapshot.
+        result = db.execute(
+            sa_update(SkateSessionModel)
+            .where(
+                SkateSessionModel.id == session_id,
+                SkateSessionModel.user_id == user_id,
+                SkateSessionModel.ended_at.is_(None),
+                SkateSessionModel.deleted_at.is_(None),
+            )
+            .values(ended_at=incoming_end, updated_at=now)
+        )
+        transitioned = int(result.rowcount or 0) == 1
+        db.refresh(row)
+
     db.commit()
     db.refresh(row)
-    if not was_ended and row.ended_at is not None:
+    if transitioned:
         generate_session_recap_feed_event(db, session_id, user_id=user_id)
     return _session_to_response(row, db)
 

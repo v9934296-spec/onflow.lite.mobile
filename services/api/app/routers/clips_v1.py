@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
@@ -22,8 +22,8 @@ from app.schemas.clips import (
     ClipInitiateUploadRequest,
     ClipInitiateUploadResponse,
 )
-from app.services.clip_upload import clip_storage_key, iso_z, new_clip_id, presigned_put_url
-from app.services.clip_v1_pipeline import complete_v1_clip_upload
+from app.services.clip_upload import as_utc, clip_storage_key, iso_z, new_clip_id, presigned_put_url
+from app.services.clip_v1_pipeline import assert_session_accepts_clip, complete_v1_clip_upload
 from app.services.gemini_spend_cap import check_daily_spend_cap
 from app.services.usage_limits import check_analysis_quota
 
@@ -45,6 +45,8 @@ def _resolve_session_for_upload(
     db: Session,
     user_id: str,
     session_id: str | None,
+    *,
+    captured_at: datetime | None = None,
 ) -> str | None:
     """Validate optional session_id; 404 if missing/deleted, 403 if another user's."""
     if session_id is None:
@@ -54,7 +56,7 @@ def _resolve_session_for_upload(
         raise HTTPException(status_code=404, detail="Session not found.")
     if row.user_id != user_id:
         raise HTTPException(status_code=403, detail="Session not accessible.")
-    # Ended sessions still accept uploads (5B.1 decision).
+    assert_session_accepts_clip(row, captured_at=captured_at)
     return session_id
 
 
@@ -74,7 +76,9 @@ def initiate_clip_upload(
     # early check_analysis_quota/check_daily_spend_cap before reserve-at-create.
     check_analysis_quota(user_id)
     check_daily_spend_cap()
-    validated_session_id = _resolve_session_for_upload(db, user_id, body.session_id)
+    validated_session_id = _resolve_session_for_upload(
+        db, user_id, body.session_id, captured_at=body.captured_at
+    )
 
     clip_id = new_clip_id()
     storage_key = clip_storage_key(user_id, clip_id, body.content_type)
@@ -86,6 +90,7 @@ def initiate_clip_upload(
     )
 
     now = datetime.now(timezone.utc)
+    captured_at = as_utc(body.captured_at) if body.captured_at is not None else None
     clip = ClipModel(
         id=clip_id,
         user_id=user_id,
@@ -101,6 +106,7 @@ def initiate_clip_upload(
         upload_status="pending",
         created_at=now,
         updated_at=now,
+        captured_at=captured_at,
     )
     db.add(clip)
     db.commit()

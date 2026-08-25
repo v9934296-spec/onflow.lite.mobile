@@ -31,6 +31,11 @@ from app.schemas.gemini_analysis import GeminiClipAnalysis
 from app.services.beta_observability import log_beta
 from app.services.clip_retention import retain_clip
 from app.services.clip_playback_hints import merge_playback_hints_into_result
+from app.services.clip_quota import (
+    begin_quota_release,
+    identity_repository_for_worker,
+    settle_quota_release,
+)
 from app.services.clip_review_assembly import (
     build_completed_result_from_gemini,
     build_degraded_provider_failure_result,
@@ -63,6 +68,13 @@ logger = structlog.get_logger(__name__)
 FAILURE_VIDEO_UNREADABLE = "video_unreadable"
 UPLOAD_MISSING = "upload_missing"
 FAILURE_CLIP_QUALITY_INSUFFICIENT = "clip_quality_insufficient"
+
+# A completed job keeps its charge only when the skater actually received a
+# usable read. "insufficient" covers both a degraded provider failure and
+# footage the engine could not assess, and neither is something to bill for
+# (spec decision 17). Abuse is bounded separately by the hourly/daily analysis
+# caps and the per-user concurrency limit, not by charging for non-answers.
+CHARGEABLE_READINESS = frozenset({"usable", "limited"})
 
 # Gemini result cache: keyed by content SHA-256 + tier. 30-day TTL. Best-effort —
 # silently disabled when Redis is unavailable. Saves ~30-45s and one Gemini call
@@ -263,6 +275,43 @@ def _sync_v1_clip_terminal(
     sync_v1_clip_from_job_result(job_id, result, failed=failed)
 
 
+def _release_quota_and_persist(
+    repo: ClipJobRepository,
+    job: Any,
+    *,
+    claim_token: str | None,
+    reason: str,
+) -> bool:
+    """Give the analysis slot back, then persist the terminal job in one write.
+
+    A skater is charged when a clip is accepted for analysis. If no usable
+    analysis comes back, the charge is reversed — spec decision 17. The release
+    marker rides along on the same job update that records the terminal state,
+    so a lost claim cannot leave a refunded credit attached to a job row that
+    still looks charged.
+    """
+    release = begin_quota_release(job)
+    persisted = _persist_claimed(repo, job, claim_token=claim_token)
+    if not persisted:
+        # Another worker owns this job now; it will run its own release.
+        return False
+    if release.changed:
+        logger.info(
+            "event=clip_quota_released job_id=%s reason=%s source=%s",
+            getattr(job, "id", ""),
+            reason,
+            job.quota_source,
+        )
+        settle_quota_release(
+            identity_repository_for_worker(),
+            job.user_id,
+            release,
+            job_id=getattr(job, "id", ""),
+            reason=reason,
+        )
+    return True
+
+
 def _persist_claimed(repo: ClipJobRepository, job: Any, *, claim_token: str | None) -> bool:
     """Write terminal/in-flight job state only while ``claim_token`` still owns it."""
     if not claim_token:
@@ -357,7 +406,18 @@ async def finalize_completed_clip_job(
     )
     token = claim_token or getattr(job, "claim_token", None)
     job.with_status("completed", result_json=result)
-    if not _persist_claimed(repo, job, claim_token=token):
+
+    readiness = str(result.get("review_readiness") or "")
+    if readiness in CHARGEABLE_READINESS:
+        persisted = _persist_claimed(repo, job, claim_token=token)
+    else:
+        persisted = _release_quota_and_persist(
+            repo,
+            job,
+            claim_token=token,
+            reason="provider_degraded" if degraded else "review_insufficient",
+        )
+    if not persisted:
         await _cleanup_upload(
             file_path, storage_key, skip_remote_delete=skip_remote_storage_delete
         )
@@ -507,7 +567,12 @@ async def run_clip_job(
                 or not looks_like_video(file_path)
             ):
                 job.with_status("failed", failure_reason=FAILURE_VIDEO_UNREADABLE)
-                if _persist_claimed(repo, job, claim_token=claim_token):
+                if _release_quota_and_persist(
+                    repo,
+                    job,
+                    claim_token=claim_token,
+                    reason=FAILURE_VIDEO_UNREADABLE,
+                ):
                     _sync_v1_clip_terminal(job_id, failed=True)
                 log_beta(
                     "beta_job_failed",
@@ -529,7 +594,12 @@ async def run_clip_job(
 
             if not first.get("video_readable"):
                 job.with_status("failed", failure_reason=FAILURE_VIDEO_UNREADABLE)
-                if _persist_claimed(repo, job, claim_token=claim_token):
+                if _release_quota_and_persist(
+                    repo,
+                    job,
+                    claim_token=claim_token,
+                    reason=FAILURE_VIDEO_UNREADABLE,
+                ):
                     _sync_v1_clip_terminal(job_id, failed=True)
                 log_beta(
                     "beta_job_failed",
@@ -810,7 +880,9 @@ async def run_clip_job(
         except Exception:
             logger.exception("event=clip_job_failed reason=internal_error")
             job.with_status("failed", failure_reason="internal_error")
-            if _persist_claimed(repo, job, claim_token=claim_token):
+            if _release_quota_and_persist(
+                repo, job, claim_token=claim_token, reason="internal_error"
+            ):
                 _sync_v1_clip_terminal(job_id, failed=True)
             log_beta("beta_job_failed", job_id=job_id, failure_reason="internal_error")
             logger.info("event=clip_job_failed failure_reason=internal_error")

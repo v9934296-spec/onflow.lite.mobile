@@ -40,6 +40,7 @@ from app.routers import (
     session_attempts,
     sessions,
     stats,
+    tricks,
     webhooks,
 )
 logger = structlog.get_logger(__name__)
@@ -311,6 +312,7 @@ def create_app() -> FastAPI:
     app.include_router(clips_v1.router)
     app.include_router(sessions.router)
     app.include_router(session_attempts.router)
+    app.include_router(tricks.router)
     app.include_router(feed.router)
     app.include_router(progression.router)
     app.include_router(stats.router)

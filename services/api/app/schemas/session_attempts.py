@@ -31,9 +31,27 @@ class SessionAttemptSyncRequest(BaseModel):
     attempts: list[SessionAttemptIn] = Field(default_factory=list, max_length=100)
 
 
+SessionAttemptRejectReason = Literal[
+    "missing_id",
+    "invalid_logged_at",
+    "session_not_found",
+    "forbidden",
+    # Immutability contract — the stored attempt was left untouched.
+    "attempt_deleted",
+    "session_immutable",
+    "outcome_immutable",
+    "attempt_immutable",
+    "duplicate_in_batch",
+]
+
+
 class SessionAttemptRejected(BaseModel):
     id: str
-    reason: str
+    reason: SessionAttemptRejectReason = Field(
+        description=(
+            "Machine-readable cause. Clients branch on this value and never on prose."
+        )
+    )
 
 
 class SessionAttemptSyncResponse(BaseModel):

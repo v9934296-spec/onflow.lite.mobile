@@ -218,6 +218,14 @@ class ClipInitiateUploadRequest(BaseModel):
     content_type: Literal["video/mp4", "video/quicktime"]
     size_bytes: int = Field(gt=0, le=100 * 1024 * 1024)
     client_hint_trick_id: str | None = None
+    captured_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When the skater filmed the clip. Required for the launch client so an "
+            "ended session can accept a delayed upload only when capture predates "
+            "ended_at. Omitted by onflow-lite; the 24h window still applies."
+        ),
+    )
 
 
 class ClipInitiateUploadResponse(BaseModel):

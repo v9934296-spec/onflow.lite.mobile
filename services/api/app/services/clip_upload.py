@@ -40,6 +40,13 @@ def presigned_put_url(
     return f"local://upload/{key}", expires_at
 
 
+def as_utc(dt: datetime) -> datetime:
+    """Naive datetimes are treated as UTC. Aware datetimes convert to UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def iso_z(dt: datetime) -> str:
     if dt.tzinfo is None:
         return dt.isoformat() + "Z"

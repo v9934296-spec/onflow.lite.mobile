@@ -249,13 +249,25 @@ class SkateSessionModel(SQLModel, table=True):
 class SessionAttemptModel(SQLModel, table=True):
     """Client-logged session attempt (landed/missed) — canonical server store.
 
-    Primary key is the **client-generated** id so offline outbox sync is idempotent.
+    Primary key is the **client-generated** id, which is what lets an offline
+    outbox replay a row safely. Replay is immutable, not an upsert: see
+    ``app.routers.session_attempts``.
     """
 
     __tablename__ = "session_attempts"
     __table_args__ = (
         Index("ix_session_attempts_user_session", "user_id", "session_id"),
         Index("ix_session_attempts_session_logged", "session_id", "logged_at"),
+        # The primary key already makes ``id`` globally unique, so this adds no
+        # enforcement today. It states the invariant the sync contract actually
+        # depends on — one attempt id per account — so a later migration that
+        # widens the primary key cannot quietly permit two owners for one id.
+        Index(
+            "uq_session_attempts_user_attempt",
+            "user_id",
+            "id",
+            unique=True,
+        ),
     )
 
     id: str = Field(primary_key=True, max_length=80)
@@ -295,6 +307,7 @@ class ClipModel(SQLModel, table=True):
     deleted_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+    captured_at: Optional[datetime] = Field(default=None)
 
 
 class FeedEventModel(SQLModel, table=True):

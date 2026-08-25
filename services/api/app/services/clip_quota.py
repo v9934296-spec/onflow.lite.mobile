@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from typing import Any, NamedTuple
 
+import structlog
 from fastapi import HTTPException, Request
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
@@ -24,8 +26,91 @@ from app.models import ClipJobModel, UserModel
 from app.repositories.clip_jobs import ClipJobRepository, _current_month_bounds_utc
 from app.repositories.identity import IdentityRepository
 
+logger = structlog.get_logger(__name__)
+
 _user_locks: dict[str, threading.Lock] = {}
 _user_locks_guard = threading.Lock()
+
+# Charged states.
+QUOTA_SOURCE_UNLIMITED = "unlimited"
+QUOTA_SOURCE_MONTHLY = "monthly"
+QUOTA_SOURCE_BONUS = "bonus"
+
+# Released states. Neither is counted by ``count_monthly_free_jobs``, which is
+# what actually returns the slot to the skater.
+QUOTA_SOURCE_MONTHLY_RELEASED = "monthly_refunded"
+QUOTA_SOURCE_BONUS_RELEASED = "bonus_refunded"
+
+RELEASED_QUOTA_SOURCES = frozenset(
+    {QUOTA_SOURCE_MONTHLY_RELEASED, QUOTA_SOURCE_BONUS_RELEASED}
+)
+
+
+class QuotaRelease(NamedTuple):
+    """Outcome of phase one of a release."""
+
+    changed: bool
+    """True when this call stamped the release marker (False = already released or never charged)."""
+
+    refund_bonus: bool
+    """True when a bonus credit still has to be returned once the marker is durable."""
+
+
+def begin_quota_release(job: Any) -> QuotaRelease:
+    """Phase one of an idempotent quota release: stamp the marker in memory.
+
+    The caller must persist the job, and only then call
+    :func:`settle_quota_release`. That order matters: the marker has to be
+    durable before the credit moves. If the process dies in between, the skater
+    is short one bonus credit — recoverable and visible in the marker — whereas
+    the reverse order can refund the same credit twice from two workers.
+
+    Safe to call repeatedly. A job that is already released, or that was never
+    charged (Pro is unlimited), reports ``changed=False``.
+    """
+    source = job.quota_source
+
+    if source in RELEASED_QUOTA_SOURCES:
+        return QuotaRelease(changed=False, refund_bonus=False)
+    if source == QUOTA_SOURCE_UNLIMITED:
+        # Nothing was charged, so there is nothing to give back.
+        return QuotaRelease(changed=False, refund_bonus=False)
+
+    if source == QUOTA_SOURCE_BONUS:
+        job.quota_source = QUOTA_SOURCE_BONUS_RELEASED
+        return QuotaRelease(changed=True, refund_bonus=True)
+
+    # "monthly", or legacy rows written before quota_source existed. Excluding
+    # the row from the monthly count is the whole refund.
+    job.quota_source = QUOTA_SOURCE_MONTHLY_RELEASED
+    return QuotaRelease(changed=True, refund_bonus=False)
+
+
+def settle_quota_release(
+    identity: IdentityRepository,
+    user_id: str,
+    release: QuotaRelease,
+    *,
+    job_id: str,
+    reason: str,
+) -> None:
+    """Phase two: return a bonus credit now that the release marker is durable."""
+    if not release.refund_bonus:
+        return
+    try:
+        identity.refund_one_bonus(user_id)
+    except Exception:
+        logger.warning(
+            "clip_quota_bonus_refund_failed", job_id=job_id, reason=reason, exc_info=True
+        )
+        return
+    logger.info("clip_quota_released", job_id=job_id, reason=reason, source="bonus")
+
+
+def identity_repository_for_worker() -> IdentityRepository:
+    """Identity access for background workers, which have no ``request``."""
+    engine = get_engine()
+    return IdentityRepository(lambda: Session(engine))
 
 
 def _lock_for_user(user_id: str) -> threading.Lock:

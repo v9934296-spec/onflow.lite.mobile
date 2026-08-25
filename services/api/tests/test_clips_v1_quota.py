@@ -60,6 +60,25 @@ def test_complete_upload_records_quota_source(authed_client: TestClient) -> None
 def test_initiate_does_not_consume_bonus_until_complete(
     authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from app.services import clip_worker
+
+    readable = {
+        "video_readable": True,
+        "duration_seconds": 4.0,
+        "fps": 30.0,
+        "frame_count_estimated": 120,
+        "frames_sampled": 12,
+        "motion_detected": True,
+        "mean_brightness_0_1": 0.5,
+        "laplacian_var_mean": 140.0,
+        "review_readiness": "usable",
+        "observations": [],
+        "processing_notes": [],
+        "review_summary_base": "ok",
+    }
+    monkeypatch.setattr(
+        clip_worker, "analyze_video_first_pass", lambda _path: dict(readable)
+    )
     monkeypatch.setenv("ONFLOW_RATE_LIMIT_FREE", "1")
     db = authed_client.app.state.db
     db.ensure_invite_claim_user("test-user-001", "free")

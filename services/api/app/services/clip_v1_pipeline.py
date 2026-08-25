@@ -11,17 +11,52 @@ from sqlmodel import Session
 from app.core.config import get_settings
 from app.core.tiers import normalize_tier
 from app.domain.clip_job import ClipJobRecord, JobAlreadyExists
-from app.models import ClipModel
+from app.models import ClipModel, SkateSessionModel
 from app.repositories.clip_jobs import ClipJobRepository
 from app.schemas.clips import ClipCompleteUploadResponse
 from app.services.clip_playback_hints import sanitize_public_media_url
-from app.services.clip_quota import create_job_charging_quota
-from app.services.clip_upload import iso_z
+from app.services.clip_quota import (
+    begin_quota_release,
+    create_job_charging_quota,
+    settle_quota_release,
+)
+from app.services.clip_upload import as_utc, iso_z
 from app.services.job_queue import enqueue_clip_job
 from app.services.trick_registry import normalize_trick_name
 from app.services.video_signature import looks_like_video
 
 logger = structlog.get_logger(__name__)
+
+
+def assert_session_accepts_clip(
+    session: SkateSessionModel,
+    *,
+    captured_at: datetime | None,
+    now: datetime | None = None,
+) -> None:
+    """Reject clips filmed after ended_at, and uploads that miss the 24h window.
+
+    Open sessions are unrestricted. An ended session still accepts a delayed
+    upload when the capture (or, for legacy clients with captured_at omitted,
+    window-only) predates ended_at and the request is within the reconciliation
+    window. Complete-upload must pass the persisted clip.captured_at — never
+    clip.created_at. Structured codes only — clients must not parse prose.
+    """
+    if session.ended_at is None:
+        return
+    ended = as_utc(session.ended_at)
+    moment = now or datetime.now(timezone.utc)
+    hours = max(1, int(get_settings().ended_session_upload_window_hours))
+    if moment > ended + timedelta(hours=hours):
+        raise HTTPException(
+            status_code=409,
+            detail="session_end_upload_window_expired",
+        )
+    if captured_at is not None and as_utc(captured_at) > ended:
+        raise HTTPException(
+            status_code=409,
+            detail="capture_after_session_end",
+        )
 
 
 def clip_model_to_response(
@@ -110,6 +145,11 @@ async def complete_v1_clip_upload(
     db: Session,
 ) -> ClipCompleteUploadResponse:
     clip = _load_owned_clip(db, clip_id, user_id)
+
+    if clip.session_id:
+        session_row = db.get(SkateSessionModel, clip.session_id)
+        if session_row is not None and session_row.deleted_at is None:
+            assert_session_accepts_clip(session_row, captured_at=clip.captured_at)
 
     if clip.upload_status == "analyzed":
         raise HTTPException(status_code=409, detail="Clip upload already completed.")
@@ -216,13 +256,16 @@ async def complete_v1_clip_upload(
         logger.exception("enqueue_clip_job_failed job_id=%s", clip_id)
         failed = repo.get(clip_id)
         if failed is not None and failed.status in ("pending", "processing"):
-            qs = failed.quota_source
-            if qs == "bonus":
-                identity.refund_one_bonus(user_id)
-            elif qs == "monthly" or qs is None:
-                failed.quota_source = "monthly_refunded"
+            release = begin_quota_release(failed)
             failed.with_status("failed", failure_reason="enqueue_failed")
             repo.update(failed)
+            settle_quota_release(
+                identity,
+                user_id,
+                release,
+                job_id=clip_id,
+                reason="enqueue_failed",
+            )
         clip.upload_status = "failed"
         clip.updated_at = datetime.now(timezone.utc)
         db.add(clip)

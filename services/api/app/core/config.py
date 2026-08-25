@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     # Abandon pending V1 uploads older than this many hours (no complete-upload).
     # Reaper runs on API startup (best-effort). Minimum effective value is 1 hour.
     clip_pending_reap_hours: int = 24
+    # After a session ends, delayed uploads are accepted only when capture predates
+    # ended_at and the complete/initiate happens within this many hours of ended_at.
+    ended_session_upload_window_hours: int = 24
     # RevenueCat webhook: per IP, lenient; auth header remains mandatory in production.
     webhook_rate_limit_per_minute: int = 120
 
