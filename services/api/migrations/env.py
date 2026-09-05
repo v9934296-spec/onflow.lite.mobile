@@ -33,6 +33,11 @@ from app.models import (  # noqa: F401
 )
 from app.models_revenuecat import RcEntitlementStateModel  # noqa: F401
 
+try:
+    from migrations.alembic_version_width import ensure_alembic_version_num_width
+except ImportError:  # Alembic may put only script_location on sys.path
+    from alembic_version_width import ensure_alembic_version_num_width
+
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -69,6 +74,9 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Widen/create version_num before Alembic writes a revision id.
+        # Production is VARCHAR(32); 20260804_attempt_sync_immutability is 34.
+        ensure_alembic_version_num_width(connection)
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
