@@ -1,0 +1,18 @@
+{
+  "name": "OnFlow Lite",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "api",
+      "command": "cd services/api && PYTHONPATH=. ./.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    },
+    {
+      "name": "expo",
+      "command": "npx expo start --port 8081"
+    }
+  ],
+  "ports": [
+    { "name": "api", "port": 8000 },
+    { "name": "expo", "port": 8081 }
+  ]
+}
